@@ -36,6 +36,7 @@ const lockOrientation = async () => {
     } catch {}
   }
 }
+document.title = `${window.innerWidth}x${window.innerHeight}`
 
 window.addEventListener('resize', lockOrientation)
 lockOrientation()
