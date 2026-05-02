@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="512" height="512">
+  <!-- Fondo circular -->
+  <circle cx="60" cy="60" r="58" fill="#0f172a" stroke="#74ACDF" stroke-width="2.5"/>
+  <circle cx="60" cy="60" r="44" fill="none" stroke="#74ACDF" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- Centro blanco -->
+  <polygon points="60,37 75,47 70,63 50,63 45,47" fill="white"/>
+
+  <!-- Hexágonos alternando celeste y dorado -->
+  <polygon points="60,37 75,47 80,33 67,23 50,27" fill="#74ACDF"/>
+  <polygon points="75,47 80,63 94,58 94,42 80,33" fill="#F6B40E"/>
+  <polygon points="70,63 75,79 60,85 45,79 50,63" fill="#74ACDF"/>
+  <polygon points="45,47 40,63 26,58 26,42 40,33" fill="#F6B40E"/>
+  <polygon points="50,27 40,33 26,42 26,27 40,17 55,17" fill="#74ACDF"/>
+</svg>

@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: #74ACDF;   /* celeste argentina */
+    --color-secondary: #F6B40E; /* dorado */
+  }
+
+  body {
+    @apply bg-gray-950 text-gray-100 antialiased;
+    /* Evita rebote en iOS */
+    overscroll-behavior: none;
+  }
+
+  /* Safe area para notch / home indicator en iOS */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+@layer utilities {
+  .text-primary {
+    color: var(--color-primary);
+  }
+  .bg-primary {
+    background-color: var(--color-primary);
+  }
+  .border-primary {
+    border-color: var(--color-primary);
+  }
+}
