@@ -26,6 +26,19 @@ declare module '@tanstack/react-router' {
   }
 }
 
+// En main.tsx o App.tsx
+const lockOrientation = async () => {
+  const isMobile = window.innerWidth < 768 && window.innerHeight < 1024
+  if (isMobile && screen.orientation?.lock) {
+    try {
+      await screen.orientation.lock('portrait')
+    } catch {}
+  }
+}
+
+window.addEventListener('resize', lockOrientation)
+lockOrientation()
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
