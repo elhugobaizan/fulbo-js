@@ -28,15 +28,14 @@ declare module '@tanstack/react-router' {
 
 // En main.tsx o App.tsx
 const lockOrientation = async () => {
-  const isMobile = window.innerWidth < 768 && window.innerHeight < 1024
   const orientation = screen.orientation as any
-  if (isMobile && orientation?.lock) {
-    try {
-      await orientation.lock('portrait')
-    } catch {}
-  }
+  const isPhone = /iPhone|Android.*Mobile|Windows Phone/i.test(navigator.userAgent)
+if (isPhone && orientation?.lock) {
+  try {
+    await orientation.lock('portrait')
+  } catch {}
 }
-document.title = `${window.innerWidth}x${window.innerHeight}`
+}
 
 window.addEventListener('resize', lockOrientation)
 lockOrientation()
