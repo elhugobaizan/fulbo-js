@@ -339,7 +339,7 @@ function TeamPage() {
       {/* API Squad */}
       {!local && loadingSquad ? (
         <SquadSkeleton />
-      ) : squad.length === 0 ? (
+      ) : (squad.length === 0 && !local) ? (
         <NoSquad isLocal={false} />
       ) : (
         <div className="space-y-5">
