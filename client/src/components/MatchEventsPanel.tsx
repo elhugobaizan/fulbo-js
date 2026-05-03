@@ -241,12 +241,12 @@ export function MatchEventsPanel({ matchId, homeTeam, awayTeam, homePlayers, awa
             <select value={playerId} onChange={e => setPlayerId(e.target.value)}
               className="px-2 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]">
               <option value="">Entra</option>
-              {teamPlayers.map(p => <option key={p.id} value={p.id}>{ˋ${p.lastName}, ${p.firstName.slice(0,1)}.ˋ}</option>)}
+              {teamPlayers.map(p => <option key={p.id} value={p.id}>ˋ${p.lastName}, ${p.firstName.slice(0,1)}.ˋ</option>)}
             </select>
             <select value={playerOutId} onChange={e => setPlayerOutId(e.target.value)}
               className="px-2 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]">
               <option value="">Sale</option>
-              {teamPlayers.map(p => <option key={p.id} value={p.id}>{p.lastName}</option>)}
+              {teamPlayers.map(p => <option key={p.id} value={p.id}>ˋ${p.lastName}, ${p.firstName.slice(0,1)}ˋ</option>)}
             </select>
           </div>
         )}
