@@ -141,6 +141,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       standingsByGroup[group.id] = calculateStandings(relevantMatches, group.members)
     }
 
+    for (const [groupId, standings] of Object.entries(standingsByGroup)) {
+      console.log(`Group ${groupId}:`, (standings as any[]).slice(0, 3).map((s: any) => `${s.team.name}: ${s.points}pts`))
+    }
+
     // Mapear partidos knockout por bracketPosition + knockoutRound
     const knockoutMatches = enrichedMatches.filter(m => m.phase === 'knockout')
 
