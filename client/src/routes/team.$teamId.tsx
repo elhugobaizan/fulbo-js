@@ -10,6 +10,7 @@ import { PlayerModal } from '../components/PlayerModal'
 import { TeamBadge } from '../components/TeamBadge'
 import { useWikidata } from '../hooks/useWikidata'
 import { AddPlayerModal } from '../components/AddPlayerModal'
+import { LocalPlayerModal } from '../components/LocalPlayerModal'
 import { usePlayersByTeam, useTournamentTeams, useTeamTournaments } from '../hooks/useLocalPlayers'
 import { useActiveTournament } from '../hooks/useActiveTournament'
 import type { Player } from '../types/football'
@@ -187,6 +188,7 @@ function TeamPage() {
   const { data: tournamentTeams = [] } = useTournamentTeams(local ? tournamentId : 0)
   const { data: teamTournaments = [] } = useTeamTournaments(local ? numericId : 0)
   const [showAddPlayer, setShowAddPlayer] = useState(false)
+  const [selectedLocalPlayer, setSelectedLocalPlayer] = useState<any>(null)
 
   const { data: squad = [], isLoading: loadingSquad } = useQuery({
     queryKey: ['squad', numericId, CURRENT_SEASON],
@@ -218,9 +220,9 @@ function TeamPage() {
 
   return (
     <div className="space-y-5">
-      <button onClick={() => navigate({ to: -1 as any })}
+      <button onClick={() => navigate({ to: '/standings' })}
         className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm">
-        <ArrowLeft size={16} /> Volver
+        <ArrowLeft size={16} /> Volver a posiciones
       </button>
 
       {/* Header */}
@@ -278,52 +280,52 @@ function TeamPage() {
           {localPlayers.length === 0
             ? <NoSquad isLocal={true} />
             : (() => {
-              const POSITION_ORDER = ['Arquero', 'Defensor', 'Volante', 'Delantero']
-              const grouped = localPlayers.reduce((acc: any, p: any) => {
-                const pos = p.position ?? 'Sin posición'
-                if (!acc[pos]) acc[pos] = []
-                acc[pos].push(p)
-                return acc
-              }, {})
-              const positions = Object.keys(grouped).sort((a, b) => {
-                const ai = POSITION_ORDER.indexOf(a), bi = POSITION_ORDER.indexOf(b)
-                if (ai === -1 && bi === -1) return a.localeCompare(b)
-                if (ai === -1) return 1
-                if (bi === -1) return -1
-                return ai - bi
-              })
-              return (
-                <div className="space-y-4">
-                  {positions.map(pos => (
-                    <div key={pos}>
-                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                        {pos} ({grouped[pos].length})
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {grouped[pos].map((player: any) => (
-                          <div key={player.id} className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 bg-gray-900/40">
-                            <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0">
-                              <span className="text-sm font-bold text-gray-300">
-                                {player.firstName[0]}{player.lastName[0]}
-                              </span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-white truncate">{player.firstName} {player.lastName}</p>
-                              <div className="flex gap-3 mt-0.5 text-xs text-gray-500">
-                                {player.goals > 0 && <span>{player.goals} gol{player.goals !== 1 ? 'es' : ''}</span>}
-                                {player.assists > 0 && <span>{player.assists} asist.</span>}
-                                {player.yellowCards > 0 && <span>{player.yellowCards} 🟨</span>}
-                                {player.redCards > 0 && <span>{player.redCards} 🟥</span>}
+                const POSITION_ORDER = ['Arquero', 'Defensor', 'Volante', 'Delantero']
+                const grouped = localPlayers.reduce((acc: any, p: any) => {
+                  const pos = p.position ?? 'Sin posición'
+                  if (!acc[pos]) acc[pos] = []
+                  acc[pos].push(p)
+                  return acc
+                }, {})
+                const positions = Object.keys(grouped).sort((a, b) => {
+                  const ai = POSITION_ORDER.indexOf(a), bi = POSITION_ORDER.indexOf(b)
+                  if (ai === -1 && bi === -1) return a.localeCompare(b)
+                  if (ai === -1) return 1
+                  if (bi === -1) return -1
+                  return ai - bi
+                })
+                return (
+                  <div className="space-y-4">
+                    {positions.map(pos => (
+                      <div key={pos}>
+                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                          {pos} ({grouped[pos].length})
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {grouped[pos].map((player: any) => (
+                            <button key={player.id} onClick={() => setSelectedLocalPlayer(player)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 bg-gray-900/40 hover:bg-gray-900/80 transition-colors text-left">
+                              <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0">
+                                <span className="text-sm font-bold text-gray-300">
+                                  {player.firstName[0]}{player.lastName[0]}
+                                </span>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-white truncate">{player.firstName} {player.lastName}</p>
+                                <div className="flex gap-3 mt-0.5 text-xs text-gray-500">
+                                  {player.goals > 0 && <span>{player.goals} gol{player.goals !== 1 ? 'es' : ''}</span>}
+                                  {player.assists > 0 && <span>{player.assists} asist.</span>}
+                                  {player.yellowCards > 0 && <span>{player.yellowCards} 🟨</span>}
+                                  {player.redCards > 0 && <span>{player.redCards} 🟥</span>}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )
-            })()
+                    ))}
+                  </div>
+                )
+              })()
           }
           {showAddPlayer && (
             <AddPlayerModal
@@ -333,13 +335,20 @@ function TeamPage() {
               onClose={() => setShowAddPlayer(false)}
             />
           )}
+          {selectedLocalPlayer && (
+            <LocalPlayerModal
+              player={selectedLocalPlayer}
+              tournamentId={tournamentId}
+              onClose={() => setSelectedLocalPlayer(null)}
+            />
+          )}
         </div>
       )}
 
       {/* API Squad */}
       {!local && loadingSquad ? (
         <SquadSkeleton />
-      ) : (squad.length === 0 && !local) ? (
+      ) : squad.length === 0 ? (
         <NoSquad isLocal={false} />
       ) : (
         <div className="space-y-5">

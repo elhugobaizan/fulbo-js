@@ -81,13 +81,27 @@ export function useTournamentTeams(tournamentId: number) {
   return useQuery({ queryKey: ['tournament-teams', tournamentId], queryFn: () => fetchTournamentTeams(tournamentId), enabled: tournamentId > 0, staleTime: 1000 * 60 * 10 })
 }
 
+async function fetchPlayerStats(playerId: number, tournamentId: number) {
+  const { data } = await apiClient.get('/local', { params: { resource: 'player-stats', playerId, tournamentId } })
+  return data.data
+}
+
+export function usePlayerStats(playerId: number | null, tournamentId: number) {
+  return useQuery({
+    queryKey: ['player-stats', playerId, tournamentId],
+    queryFn: () => fetchPlayerStats(playerId!, tournamentId),
+    enabled: !!playerId && tournamentId > 0,
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
 export function useCreatePlayer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ token, payload }: { token: string; payload: any }) => createPlayer(token, payload),
     onSuccess: (_, { payload }) => {
       queryClient.invalidateQueries({ queryKey: ['local-players', payload.tournamentId] })
-      queryClient.invalidateQueries({ queryKey: ['players-by-team', payload.teamId] })
+      queryClient.invalidateQueries({ queryKey: ['players-by-team', payload.teamId, payload.tournamentId] })
     },
   })
 }
