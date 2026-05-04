@@ -209,7 +209,13 @@ function MatchResultForm({ match, token, onSaved, onClose }: { match: any; token
 
 // ─── New Match Form ───────────────────────────────────────────────────────────
 
-function NewMatchForm({ allTeams, token, onSaved, tournamentId }: { allTeams: any[]; token: string; onSaved: () => void; tournamentId: number }) {
+function NewMatchForm({ allTeams, token, onSaved, tournamentId, groupsData, allowCrossGroup }: { allTeams: any[]; token: string; onSaved: () => void; tournamentId: number; groupsData: any[]; allowCrossGroup: boolean }) {
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('')
+  const availableTeams = allowCrossGroup
+    ? allTeams
+    : selectedGroupId
+      ? (groupsData.find((g: any) => String(g.id) === selectedGroupId)?.teams ?? [])
+      : allTeams
   const [homeTeamId, setHomeTeamId] = useState('')
   const [awayTeamId, setAwayTeamId] = useState('')
   const [matchday, setMatchday] = useState('')
@@ -243,16 +249,29 @@ function NewMatchForm({ allTeams, token, onSaved, tournamentId }: { allTeams: an
         <span className="text-sm font-medium text-white">Nuevo partido</span>
         <button onClick={() => setOpen(false)} className="text-gray-500 hover:text-white"><X size={14} /></button>
       </div>
+      {!allowCrossGroup && (
+        <select value={selectedGroupId} onChange={e => { setSelectedGroupId(e.target.value); setHomeTeamId(''); setAwayTeamId('') }}
+          className="w-full px-3 py-2 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm focus:outline-none focus:border-[#74ACDF]">
+          <option value="">Todos los grupos</option>
+          {groupsData.map((g: any) => <option key={g.id} value={String(g.id)}>{g.name}</option>)}
+        </select>
+      )}
+      {!allowCrossGroup && selectedGroupId && (
+        <p className="text-xs text-gray-500">
+          {groupsData.find((g: any) => String(g.id) === selectedGroupId)?.teams
+            ?.map((t: any) => t.shortName ?? t.name).join(', ')}
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <select value={homeTeamId} onChange={(e) => setHomeTeamId(e.target.value)}
           className="px-3 py-2 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm focus:outline-none focus:border-[#74ACDF]">
           <option value="">Local</option>
-          {allTeams.map((t: any) => <option key={t.id} value={t.id}>{t.shortName ?? t.name}</option>)}
+          {availableTeams.map((t: any) => <option key={t.id} value={t.id}>{t.shortName ?? t.name}</option>)}
         </select>
         <select value={awayTeamId} onChange={(e) => setAwayTeamId(e.target.value)}
           className="px-3 py-2 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm focus:outline-none focus:border-[#74ACDF]">
           <option value="">Visitante</option>
-          {allTeams.map((t: any) => <option key={t.id} value={t.id}>{t.shortName ?? t.name}</option>)}
+          {availableTeams.map((t: any) => <option key={t.id} value={t.id}>{t.shortName ?? t.name}</option>)}
         </select>
       </div>
       <input type="number" min="1" value={matchday} onChange={(e) => setMatchday(e.target.value)} placeholder="Fecha N°"
@@ -481,20 +500,30 @@ function BracketRulesSection({ token, groups, tournamentId }: { token: string; g
 
 // ─── Groups Section ───────────────────────────────────────────────────────────
 
-function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, setEditingMatch, tournamentId }: {
+function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, setEditingMatch, tournamentId, allowCrossGroup }: {
   allMatches: any[]; allTeams: any[]; groupsData: any[]; token: string
-  editingMatch: number | null; setEditingMatch: (id: number | null) => void; tournamentId: number
+  editingMatch: number | null; setEditingMatch: (id: number | null) => void; tournamentId: number; allowCrossGroup: boolean
 }) {
   // All available matchdays across all groups
   const allMatchdays = [...new Set(allMatches.filter(m => m.matchday).map(m => m.matchday as number))].sort((a, b) => a - b)
   const [selectedMatchday, setSelectedMatchday] = useState<number | null>(allMatchdays[allMatchdays.length - 1] ?? null)
 
-  const dayMatches = allMatches.filter(m => m.matchday === selectedMatchday)
+  const dayMatches = allMatches
+    .filter(m => m.matchday === selectedMatchday)
+    .sort((a, b) => (a.groupId ?? 0) - (b.groupId ?? 0))
+
+  // Agrupar por groupId
+  const byGroup = dayMatches.reduce((acc: Record<string, any[]>, m: any) => {
+    const key = String(m.groupId ?? 'sin-grupo')
+    if (!acc[key]) acc[key] = []
+    acc[key].push(m)
+    return acc
+  }, {})
 
   return (
     <div className="space-y-4">
       {/* New match form - always on top */}
-      <NewMatchForm allTeams={allTeams} token={token} onSaved={() => { }} tournamentId={tournamentId} />
+      <NewMatchForm allTeams={allTeams} token={token} onSaved={() => { }} tournamentId={tournamentId} groupsData={groupsData} allowCrossGroup={allowCrossGroup} />
 
       {/* Matchday selector */}
       {allMatchdays.length > 0 && (
@@ -516,30 +545,39 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
       {/* Matches for selected matchday */}
       {selectedMatchday !== null && dayMatches.length > 0 && (
         <div className="space-y-2">
-          {dayMatches.map((match: any) => {
-            const enriched = {
-              ...match,
-              homeTeam: allTeams.find((t: any) => t.id === match.homeTeamId),
-              awayTeam: allTeams.find((t: any) => t.id === match.awayTeamId),
-            }
+          {Object.entries(byGroup).map(([groupId, groupMatches]) => {
+            const groupName = groupsData.find((g: any) => String(g.id) === groupId)?.name ?? 'Sin grupo'
             return (
-              <div key={match.id}>
-                {editingMatch === match.id ? (
-                  <MatchResultForm match={enriched} token={token} onSaved={() => setEditingMatch(null)} onClose={() => setEditingMatch(null)} />
-                ) : (
-                  <button onClick={() => setEditingMatch(editingMatch === match.id ? null : match.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors text-left ${match.status === 'finished' ? 'border-gray-800 bg-gray-900/40 hover:bg-gray-900/70' : 'border-dashed border-gray-700 hover:border-gray-500'}`}>
-                    <span className="text-sm text-gray-400 w-5 text-right flex-shrink-0">
-                      {groupsData.find((g: any) => g.id === match.groupId)?.name?.replace('Grupo ', '') ?? '?'}
-                    </span>
-                    <span className="text-sm text-white flex-1 text-right truncate">{enriched.homeTeam?.shortName ?? '?'}</span>
-                    <span className={`text-sm font-bold w-16 text-center ${match.status === 'finished' ? 'text-white' : 'text-gray-600'}`}>
-                      {match.status === 'finished' ? `${match.homeScore} - ${match.awayScore}` : 'vs'}
-                    </span>
-                    <span className="text-sm text-white flex-1 truncate">{enriched.awayTeam?.shortName ?? '?'}</span>
-                    {match.status === 'finished' && <Check size={14} className="text-emerald-400 flex-shrink-0" />}
-                  </button>
-                )}
+              <div key={groupId} className="space-y-2">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{groupName}</h3>
+                {(groupMatches as any[]).map((match: any) => {
+                  // ... el mismo render de cada partido
+                  const enriched = {
+                    ...match,
+                    homeTeam: allTeams.find((t: any) => t.id === match.homeTeamId),
+                    awayTeam: allTeams.find((t: any) => t.id === match.awayTeamId),
+                  }
+                  return (
+                    <div key={match.id}>
+                      {editingMatch === match.id ? (
+                        <MatchResultForm match={enriched} token={token} onSaved={() => setEditingMatch(null)} onClose={() => setEditingMatch(null)} />
+                      ) : (
+                        <button onClick={() => setEditingMatch(match.id)}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors text-left ${match.status === 'finished' ? 'border-gray-800 bg-gray-900/40 hover:bg-gray-900/70' : 'border-dashed border-gray-700 hover:border-gray-500'}`}>
+                          <span className="text-sm text-gray-400 w-5 text-right flex-shrink-0">
+                            {groupsData.find((g: any) => g.id === match.groupId)?.name?.replace('Grupo ', '') ?? '?'}
+                          </span>
+                          <span className="text-sm text-white flex-1 text-right truncate">{enriched.homeTeam?.shortName ?? '?'}</span>
+                          <span className={`text-sm font-bold w-16 text-center ${match.status === 'finished' ? 'text-white' : 'text-gray-600'}`}>
+                            {match.status === 'finished' ? `${match.homeScore} - ${match.awayScore}` : 'vs'}
+                          </span>
+                          <span className="text-sm text-white flex-1 truncate">{enriched.awayTeam?.shortName ?? '?'}</span>
+                          {match.status === 'finished' && <Check size={14} className="text-emerald-400 flex-shrink-0" />}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )
           })}
@@ -654,6 +692,7 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void }
           editingMatch={editingMatch}
           setEditingMatch={setEditingMatch}
           tournamentId={tournamentId}
+          allowCrossGroup={(tournament as any)?.allowCrossGroup ?? false}
         />
       )}
 

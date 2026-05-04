@@ -12,6 +12,7 @@
     "seed:bracket": "tsx scripts/seed-bracket-rules.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1041.0",
     "@neondatabase/serverless": "^0.10.1",
     "@vercel/blob": "^2.3.3",
     "@vercel/node": "^3.2.7",

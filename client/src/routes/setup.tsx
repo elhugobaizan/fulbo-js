@@ -97,9 +97,10 @@ function Step1({ token, onNext }: { token: string; onNext: (tournament: any) => 
   const [country, setCountry] = useState('')
   const [hasGroups, setHasGroups] = useState(true)
   const [qualifiersPerGroup, setQualifiersPerGroup] = useState('8')
+  const [allowCrossGroup, setAllowCrossGroup] = useState(false)
 
   const mutation = useMutation<any, Error, void>({
-    mutationFn: () => createTournament(token, { name, shortName, country, season: Number(season), hasGroups, qualifiersPerGroup: Number(qualifiersPerGroup) }),
+    mutationFn: () => createTournament(token, { name, shortName, country, season: Number(season), hasGroups, qualifiersPerGroup: Number(qualifiersPerGroup), allowCrossGroup }),
     onSuccess: (data) => onNext(data),
   })
 
@@ -133,11 +134,20 @@ function Step1({ token, onNext }: { token: string; onNext: (tournament: any) => 
           <label htmlFor="hasGroups" className="text-sm text-white cursor-pointer">Tiene fase de grupos</label>
         </div>
         {hasGroups && (
-          <div>
-            <label className="text-xs text-gray-400 mb-1 block">Clasificados por grupo</label>
-            <input type="number" min="1" value={qualifiersPerGroup} onChange={e => setQualifiersPerGroup(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
-          </div>
+          <>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block">Clasificados por grupo</label>
+              <input type="number" min="1" value={qualifiersPerGroup} onChange={e => setQualifiersPerGroup(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-800/50 border border-gray-700">
+              <input type="checkbox" id="allowCrossGroup" checked={allowCrossGroup} onChange={e => setAllowCrossGroup(e.target.checked)} className="w-4 h-4 accent-[#74ACDF]" />
+              <div>
+                <label htmlFor="allowCrossGroup" className="text-sm text-white cursor-pointer">Permitir cruces entre grupos</label>
+                <p className="text-xs text-gray-500 mt-0.5">Los partidos pueden ser entre equipos de distintos grupos</p>
+              </div>
+            </div>
+          </>
         )}
       </div>
       {mutation.isError && <p className="text-red-400 text-sm">Error al crear el torneo</p>}

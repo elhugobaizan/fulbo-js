@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { eq, and } from 'drizzle-orm'
-import { matches, teams, groups, groupTeams, tournaments, bracketRules, favorites, localPlayers, matchEvents } from './_lib/tournament-schema'
+import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
 
 function getDb() {
@@ -23,29 +23,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!password) return err(res, 'Password required', 400)
     if (password !== process.env.ADMIN_PASSWORD) return err(res, 'Invalid password', 401)
     return ok(res, { authenticated: true })
-  }
-
-  // ── Public: favorites ────────────────────────────────────────────────────
-  if (action === 'favorites') {
-    if (req.method === 'GET') {
-      const sessionToken = req.query.session as string
-      if (!sessionToken) return err(res, 'session required', 400)
-      const favs = await db.select().from(favorites).where(eq(favorites.sessionToken, sessionToken))
-      return ok(res, favs)
-    }
-    if (req.method === 'POST') {
-      const { sessionToken, teamId, teamName, teamLogo, leagueId } = req.body
-      if (!sessionToken || !teamId || !teamName || !leagueId) return err(res, 'Missing fields', 400)
-      const [fav] = await db.insert(favorites).values({ sessionToken, teamId, teamName, teamLogo, leagueId }).onConflictDoNothing().returning()
-      return res.status(201).json({ data: fav })
-    }
-    if (req.method === 'DELETE') {
-      const sessionToken = req.query.session as string
-      const teamId = Number(req.query.teamId)
-      if (!sessionToken) return err(res, 'session required', 400)
-      await db.delete(favorites).where(eq(favorites.sessionToken, sessionToken))
-      return res.status(204).end()
-    }
   }
 
   // ── Protected routes ──────────────────────────────────────────────────────
@@ -112,9 +89,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // setup
     if (action === 'setup-tournament' && req.method === 'POST') {
-      const { name, shortName, country, season, hasGroups, qualifiersPerGroup } = req.body
+      const { name, shortName, country, season, hasGroups, qualifiersPerGroup, allowCrossGroup } = req.body
       if (!name || !season) return err(res, 'name and season required', 400)
-      const [tournament] = await db.insert(tournaments).values({ name, shortName: shortName ?? null, country: country ?? null, season: Number(season), hasGroups: hasGroups ?? true, qualifiersPerGroup: Number(qualifiersPerGroup) || 8, active: true }).returning()
+      const [tournament] = await db.insert(tournaments).values({ name, shortName: shortName ?? null, country: country ?? null, season: Number(season), hasGroups: hasGroups ?? true, qualifiersPerGroup: Number(qualifiersPerGroup) || 8, allowCrossGroup: allowCrossGroup ?? false, active: true }).returning()
       return res.status(201).json({ data: tournament })
     }
 
