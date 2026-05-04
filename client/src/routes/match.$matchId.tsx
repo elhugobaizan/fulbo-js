@@ -1,10 +1,12 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Pencil, X } from 'lucide-react'
+import { ArrowLeft, Pencil, X, Users, Download } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { TeamBadge } from '../components/TeamBadge'
 import { MatchEventsPanel } from '../components/MatchEventsPanel'
+import { LineupPanel } from '../components/LineupPanel'
+import { ESPNImportModal } from '../components/ESPNImportModal'
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
 
 export const Route = createFileRoute('/match/$matchId')({
@@ -43,8 +45,11 @@ function MatchPage() {
   })
 
   const [showPanel, setShowPanel] = useState(false)
+  const [showLineup, setShowLineup] = useState(false)
+  const [showESPN, setShowESPN] = useState(false)
   const homeTeamId = match?.homeTeamId ?? 0
   const awayTeamId = match?.awayTeamId ?? 0
+
   const { data: homePlayers = [] } = usePlayersByTeam(homeTeamId)
   const { data: awayPlayers = [] } = usePlayersByTeam(awayTeamId)
 
@@ -179,10 +184,58 @@ function MatchPage() {
       )}
 
       {isFinished && (
-        <button onClick={() => setShowPanel(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-700 bg-gray-900/40 hover:bg-gray-800 text-gray-400 hover:text-white text-sm transition-colors">
-          <Pencil size={14} /> Cargar / Editar incidencias
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowPanel(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-700 bg-gray-900/40 hover:bg-gray-800 text-gray-400 hover:text-white text-sm transition-colors">
+            <Pencil size={14} /> Incidencias
+          </button>
+          <button onClick={() => setShowLineup(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-700 bg-gray-900/40 hover:bg-gray-800 text-gray-400 hover:text-white text-sm transition-colors">
+            <Users size={14} /> Alineación
+          </button>
+          <button onClick={() => setShowESPN(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-700 bg-gray-900/40 hover:bg-gray-800 text-gray-400 hover:text-white text-sm transition-colors">
+            <Download size={14} /> ESPN
+          </button>
+        </div>
+      )}
+
+      {showESPN && (
+        <ESPNImportModal
+          matchId={match.id}
+          homeTeam={match.homeTeam}
+          awayTeam={match.awayTeam}
+          homePlayers={homePlayers}
+          awayPlayers={awayPlayers}
+          onClose={() => setShowESPN(false)}
+        />
+      )}
+
+      {showLineup && (
+        <>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowLineup(false)} />
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pointer-events-none">
+            <div className="bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-sm pointer-events-auto"
+              style={{ maxHeight: '80vh' }}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-800">
+                <span className="font-semibold text-white text-sm">Alineación</span>
+                <button onClick={() => setShowLineup(false)} className="text-gray-500 hover:text-white transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="px-5 py-4 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 60px)' }}>
+                <LineupPanel
+                  matchId={match.id}
+                  homeTeam={match.homeTeam}
+                  awayTeam={match.awayTeam}
+                  homePlayers={homePlayers}
+                  awayPlayers={awayPlayers}
+                />
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {showPanel && isFinished && (

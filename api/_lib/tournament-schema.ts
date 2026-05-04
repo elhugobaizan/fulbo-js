@@ -168,3 +168,13 @@ export const matchEvents = pgTable('match_events', {
   isOwnGoal: boolean('is_own_goal').default(false),
   createdAt: timestamp('created_at').defaultNow(),
 })
+
+export const matchLineups = pgTable('match_lineups', {
+  id: serial('id').primaryKey(),
+  matchId: integer('match_id').references(() => matches.id).notNull(),
+  teamId: integer('team_id').references(() => teams.id).notNull(),
+  playerId: integer('player_id').references(() => localPlayers.id).notNull(),
+  isStarter: boolean('is_starter').default(true).notNull(),
+  shirtNumber: integer('shirt_number'),
+  createdAt: timestamp('created_at').defaultNow(),
+})

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { eq, inArray, and } from 'drizzle-orm'
-import { matches, teams, groups, groupTeams, tournaments, localPlayers, matchEvents } from './_lib/tournament-schema'
+import { matches, teams, groups, groupTeams, tournaments, localPlayers, matchEvents, matchLineups } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
 
 function getDb() {
@@ -90,6 +90,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const [team] = await db.select().from(teams).where(eq(teams.id, teamId))
       if (!team) return err(res, 'Team not found', 404)
       return ok(res, team)
+    }
+
+    // match lineup
+    if (resource === 'match-lineup') {
+      const matchId = Number(req.query.matchId)
+      if (!matchId) return err(res, 'matchId required', 400)
+      const lineups = await db.select({ lineup: matchLineups, player: localPlayers })
+        .from(matchLineups)
+        .innerJoin(localPlayers, eq(matchLineups.playerId, localPlayers.id))
+        .where(eq(matchLineups.matchId, matchId))
+        .orderBy(matchLineups.teamId, matchLineups.isStarter, localPlayers.lastName)
+      return ok(res, lineups.map((r: any) => ({ ...r.lineup, player: r.player })))
     }
 
     // team fixtures - next matches for a team across all tournaments (no tournamentId needed)
@@ -270,7 +282,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // top scorers local - calculated from events
     if (resource === 'local-topscorers') {
       const events = await getTournamentEvents(db, tournamentId)
-      const goalEvents = events.filter((e: any) => e.event.type === 'goal' && !e.event.isOwnGoal && e.player)
+      const goalEvents = events.filter((e: any) => e.event.type === 'goal' && !e.event.isOwnGoal && e.event.player)
       const byPlayer: Record<number, any> = {}
       for (const e of goalEvents) {
         const pid = e.event.playerId
@@ -283,7 +295,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // top assists local - calculated from events
     if (resource === 'local-topassists') {
       const events = await getTournamentEvents(db, tournamentId)
-      const assistEvents = events.filter((e: any) => e.event.type === 'assist' && e.player)
+      const assistEvents = events.filter((e: any) => e.event.type === 'assist' && e.event.player)
       const byPlayer: Record<number, any> = {}
       for (const e of assistEvents) {
         const pid = e.event.playerId
@@ -296,7 +308,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // top cards local - calculated from events
     if (resource === 'local-topcards') {
       const events = await getTournamentEvents(db, tournamentId)
-      const cardEvents = events.filter((e: any) => (e.event.type === 'yellow' || e.event.type === 'red') && e.player)
+      const cardEvents = events.filter((e: any) => (e.event.type === 'yellow' || e.event.type === 'red') && e.event.player)
       const byPlayer: Record<number, any> = {}
       for (const e of cardEvents) {
         const pid = e.event.playerId
@@ -338,59 +350,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const playerId = Number(req.query.playerId)
       if (!playerId) return err(res, 'playerId required', 400)
 
-      // Get all matches in this tournament
       const tournamentMatches = await db.select().from(matches)
         .where(eq(matches.tournamentId, tournamentId))
       const matchIds = tournamentMatches.map((m: any) => m.id)
       if (matchIds.length === 0) return ok(res, { played: 0, started: 0, subIn: 0, goals: 0, assists: 0, yellowCards: 0, redCards: 0, minutesPlayed: 0 })
 
-      // Get all events involving this player
-      const playerEvents = await db.select({ event: matchEvents })
+      // Get lineup entries for this player
+      const lineupEntries = await db.select().from(matchLineups)
+        .where(and(inArray(matchLineups.matchId, matchIds), eq(matchLineups.playerId, playerId)))
+
+      // Get events
+      const playerEvents = (await db.select({ event: matchEvents })
         .from(matchEvents)
-        .where(
-          and(
-            inArray(matchEvents.matchId, matchIds),
-            eq(matchEvents.playerId, playerId)
-          )
-        )
+        .where(and(inArray(matchEvents.matchId, matchIds), eq(matchEvents.playerId, playerId))))
+        .map((r: any) => r.event)
 
-      // Also get sub events where this player went OUT
-      const subOutEvents = await db.select({ event: matchEvents })
+      const subOutEvents = (await db.select({ event: matchEvents })
         .from(matchEvents)
-        .where(
-          and(
-            inArray(matchEvents.matchId, matchIds),
-            eq(matchEvents.playerOutId, playerId),
-            eq(matchEvents.type, 'sub')
-          )
-        )
+        .where(and(inArray(matchEvents.matchId, matchIds), eq(matchEvents.playerOutId, playerId), eq(matchEvents.type, 'sub'))))
+        .map((r: any) => r.event)
 
-      const events = playerEvents.map((r: any) => r.event)
-      const outsEvents = subOutEvents.map((r: any) => r.event)
+      // Stats from events
+      const goals = playerEvents.filter((e: any) => e.type === 'goal' && !e.isOwnGoal).length
+      const assists = playerEvents.filter((e: any) => e.type === 'assist').length
+      const yellowCards = playerEvents.filter((e: any) => e.type === 'yellow').length
+      const redCards = playerEvents.filter((e: any) => e.type === 'red').length
 
-      // Stats
-      const goals = events.filter((e: any) => e.type === 'goal' && !e.isOwnGoal).length
-      const assists = events.filter((e: any) => e.type === 'assist').length
-      const yellowCards = events.filter((e: any) => e.type === 'yellow').length
-      const redCards = events.filter((e: any) => e.type === 'red').length
-
-      // Sub events where player came IN
-      const subInEvents = events.filter((e: any) => e.type === 'sub')
-
-      // Matches where player started (has events but no subIn, OR has subOut)
+      // Played/started from lineups (preferred) or events (fallback)
       const matchesAsStarter = new Set<number>()
       const matchesAsSubIn = new Set<number>()
 
-      for (const e of outsEvents) {
-        matchesAsStarter.add(e.matchId) // was subbed out → started
-      }
-      for (const e of subInEvents) {
-        matchesAsSubIn.add(e.matchId) // came in as sub
-      }
-      // If has goal/yellow/assist but no sub event, assume started
-      for (const e of events) {
-        if (e.type !== 'sub' && !matchesAsSubIn.has(e.matchId) && !matchesAsStarter.has(e.matchId)) {
-          matchesAsStarter.add(e.matchId)
+      if (lineupEntries.length > 0) {
+        // Use lineup data
+        for (const l of lineupEntries) {
+          if (l.isStarter) matchesAsStarter.add(l.matchId)
+          else matchesAsSubIn.add(l.matchId)
+        }
+      } else {
+        // Fallback to events
+        for (const e of subOutEvents) matchesAsStarter.add(e.matchId)
+        for (const e of playerEvents.filter((e: any) => e.type === 'sub')) matchesAsSubIn.add(e.matchId)
+        for (const e of playerEvents) {
+          if (e.type !== 'sub' && !matchesAsSubIn.has(e.matchId) && !matchesAsStarter.has(e.matchId)) {
+            matchesAsStarter.add(e.matchId)
+          }
         }
       }
 
@@ -400,14 +403,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Minutes played
       let minutesPlayed = 0
+      const subInEvents = playerEvents.filter((e: any) => e.type === 'sub')
 
-      // For matches as starter: 90 - minute subbed out (or 90 if not subbed)
       for (const matchId of matchesAsStarter) {
-        const subOut = outsEvents.find((e: any) => e.matchId === matchId)
+        const subOut = subOutEvents.find((e: any) => e.matchId === matchId)
         minutesPlayed += subOut?.minute ? subOut.minute : 90
       }
-
-      // For matches as sub: 90 - minute came in
       for (const matchId of matchesAsSubIn) {
         const subInEvent = subInEvents.find((e: any) => e.matchId === matchId)
         minutesPlayed += subInEvent?.minute ? (90 - subInEvent.minute) : 45

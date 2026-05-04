@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { eq, and } from 'drizzle-orm'
-import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents } from './_lib/tournament-schema'
+import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents, matchLineups } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
 
 function getDb() {
@@ -215,6 +215,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         tournamentId: Number(tournamentId),
       }).returning()
       return res.status(201).json({ data: player })
+    }
+
+    // set match lineup
+    if (action === 'set-lineup' && req.method === 'POST') {
+      const { matchId, teamId, players } = req.body
+      // players = [{ playerId, isStarter, shirtNumber }]
+      if (!matchId || !teamId || !players) return err(res, 'Missing fields', 400)
+      // Delete existing lineup for this team in this match
+      await db.delete(matchLineups).where(
+        and(eq(matchLineups.matchId, Number(matchId)), eq(matchLineups.teamId, Number(teamId)))
+      )
+      // Insert new lineup
+      if (players.length > 0) {
+        await db.insert(matchLineups).values(
+          players.map((p: any) => ({
+            matchId: Number(matchId),
+            teamId: Number(teamId),
+            playerId: Number(p.playerId),
+            isStarter: p.isStarter ?? true,
+            shirtNumber: p.shirtNumber ? Number(p.shirtNumber) : null,
+          }))
+        )
+      }
+      return ok(res, { matchId, teamId, count: players.length })
     }
 
     return err(res, 'Unknown action', 400)
