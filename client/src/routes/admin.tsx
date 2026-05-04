@@ -557,6 +557,10 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
                     homeTeam: allTeams.find((t: any) => t.id === match.homeTeamId),
                     awayTeam: allTeams.find((t: any) => t.id === match.awayTeamId),
                   }
+                  const awayTeamGroupId = groupsData.find((g: any) =>
+                    g.teams?.some((t: any) => t.id === match.awayTeamId)
+                  )?.id
+                  const isCrossGroup = awayTeamGroupId && awayTeamGroupId !== match.groupId
                   return (
                     <div key={match.id}>
                       {editingMatch === match.id ? (
@@ -572,6 +576,7 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
                             {match.status === 'finished' ? `${match.homeScore} - ${match.awayScore}` : 'vs'}
                           </span>
                           <span className="text-sm text-white flex-1 truncate">{enriched.awayTeam?.shortName ?? '?'}</span>
+                          {isCrossGroup && <span className="text-[10px] text-yellow-500 border border-yellow-700/50 rounded px-1 flex-shrink-0">inter</span>}
                           {match.status === 'finished' && <Check size={14} className="text-emerald-400 flex-shrink-0" />}
                         </button>
                       )}
