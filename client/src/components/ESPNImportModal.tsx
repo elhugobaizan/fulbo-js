@@ -230,7 +230,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
       // Step 1: Build playerId map — first from existing reconciliation
       const playerIdMap: Record<string, number> = {}
       for (const [name, rec] of Object.entries(reconciliation)) {
-        if (rec.action === 'existing' && rec.playerId) {
+        if ((rec.action === 'existing' || rec.action === 'edit') && rec.playerId) {
           playerIdMap[name] = rec.playerId
         }
       }
@@ -275,6 +275,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
         for (const event of parsedEvents) {
           const pName = event.playerName ?? event.playerInName
           const playerId = pName ? playerIdMap[pName] : undefined
+          console.log('Importando evento', { ...event, playerId, pName, playerIdMap })
           if (!playerId) continue // skip events without a resolvable player
           await createEvent({
             token, payload: {
