@@ -28,11 +28,17 @@ const POSITION_MAP: Record<string, string> = {
   'LB': 'Defensor',
   'RB': 'Defensor',
   'AM': 'Volante',
+  'CM': 'Volante',
+  'CM-L': 'Volante',
+  'CM-R': 'Volante',
   'AM-L': 'Volante',
   'AM-R': 'Volante',
   'LM': 'Volante',
   'RM': 'Volante',
   'F': 'Delantero',
+  'LF': 'Delantero',
+  'RF': 'Delantero',
+  'RCF': 'Delantero',
 }
 
 async function authenticate(password: string): Promise<boolean> {
