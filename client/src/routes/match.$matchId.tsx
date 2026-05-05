@@ -207,6 +207,7 @@ function MatchPage() {
           awayTeam={match.awayTeam}
           homePlayers={homePlayers}
           awayPlayers={awayPlayers}
+          tournamentId={match.tournamentId}
           onClose={() => setShowESPN(false)}
         />
       )}
