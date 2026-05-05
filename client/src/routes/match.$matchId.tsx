@@ -97,7 +97,7 @@ function MatchPage() {
             <div className="flex flex-wrap justify-center gap-1 min-h-4">
               {homeEvents.filter((e: any) => e.type === 'goal').map((e: any, i: number) => (
                 <span key={i} className="text-xs text-gray-400">
-                  {e.player ? `${e.player.lastName}${e.minute ? ` ${e.minute}'` : ''}` : `⚽${e.minute ? ` ${e.minute}'` : ''}`}
+                  {e.player ? `${e.player.lastName}${e.isPenalty ? ' (p)' : ''}${e.isOwnGoal ? ' (e/c)' : ''}${e.minute ? ` ${e.minute}'` : ''}` : `⚽${e.minute ? ` ${e.minute}'` : ''}`}
                   {i < homeEvents.filter((e: any) => e.type === 'goal').length - 1 && ', '}
                 </span>
               ))}
