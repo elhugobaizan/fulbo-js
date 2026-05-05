@@ -217,6 +217,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(201).json({ data: player })
     }
 
+    // edit local player
+    if (action === 'edit-player' && req.method === 'POST') {
+      const { playerId, firstName, lastName, teamId, position } = req.body
+      if (!playerId || !firstName || !lastName || !teamId) return err(res, 'Missing fields', 400)
+      const [player] = await db.update(localPlayers).set({
+        firstName,
+        lastName,
+        position: position ?? null,
+        teamId: Number(teamId),
+      }).where(eq(localPlayers.id, Number(playerId))).returning()
+      return ok(res, { data: player })
+    }
+
     // set match lineup
     if (action === 'set-lineup' && req.method === 'POST') {
       const { matchId, teamId, players } = req.body

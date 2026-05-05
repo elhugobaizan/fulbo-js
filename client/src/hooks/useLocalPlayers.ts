@@ -47,6 +47,13 @@ async function createPlayer(token: string, payload: any): Promise<LocalPlayer> {
   return data.data
 }
 
+async function editPlayer(token: string, playerId: number, payload: any): Promise<LocalPlayer> {
+  const { data } = await apiClient.post('/admin?action=edit-player', { ...payload, playerId }, {
+    headers: { 'x-admin-token': token },
+  })
+  return data.data
+}
+
 export function useLocalTopScorers(tournamentId: number) {
   return useQuery({ queryKey: ['local-topscorers', tournamentId], queryFn: () => fetchLocalTopScorers(tournamentId), staleTime: 1000 * 60 * 5 })
 }
@@ -99,6 +106,17 @@ export function useCreatePlayer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ token, payload }: { token: string; payload: any }) => createPlayer(token, payload),
+    onSuccess: (_, { payload }) => {
+      queryClient.invalidateQueries({ queryKey: ['local-players', payload.tournamentId] })
+      queryClient.invalidateQueries({ queryKey: ['players-by-team', payload.teamId, payload.tournamentId] })
+    },
+  })
+}
+
+export function useEditPlayer() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ token, playerId, payload }: { token: string; playerId: number; payload: any }) => editPlayer(token, playerId, payload),
     onSuccess: (_, { payload }) => {
       queryClient.invalidateQueries({ queryKey: ['local-players', payload.tournamentId] })
       queryClient.invalidateQueries({ queryKey: ['players-by-team', payload.teamId, payload.tournamentId] })

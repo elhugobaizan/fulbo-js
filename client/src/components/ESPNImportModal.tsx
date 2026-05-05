@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Download, Check, AlertCircle, Lock, ChevronRight, Link } from 'lucide-react'
 import { useCreateEvent } from '../hooks/useMatchEvents'
 import { useSetLineup } from '../hooks/useMatchLineup'
+import { useCreatePlayer, useEditPlayer } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
 
 const STORAGE_KEY = 'futbol-ar:admin-token'
@@ -20,6 +21,20 @@ const LEAGUE_SLUGS = [
 
 const EVENT_LABELS: Record<string, string> = { goal: '⚽', yellow: '🟨', red: '🟥', sub: '🔄', assist: '🅰️' }
 
+const POSITION_MAP: Record<string, string> = {
+  'G': 'Arquero',
+  'CD-L': 'Defensor',
+  'CD-R': 'Defensor',
+  'LB': 'Defensor',
+  'RB': 'Defensor',
+  'AM': 'Volante',
+  'AM-L': 'Volante',
+  'AM-R': 'Volante',
+  'LM': 'Volante',
+  'RM': 'Volante',
+  'F': 'Delantero',
+}
+
 async function authenticate(password: string): Promise<boolean> {
   const { data } = await apiClient.post('/admin?action=auth', { password })
   return data.data?.authenticated === true
@@ -37,18 +52,33 @@ function extractESPNTeams(data: any): { id: string; name: string }[] {
   return competitors.map((c: any) => ({ id: c.team?.id, name: c.team?.displayName }))
 }
 
+function parseMinute(clock: any): number | null {
+  // displayValue can be "90 + 3" for added time
+  const display = clock?.displayValue ?? ''
+  const added = display.match(/(\d+)\s*\'\+\s*(\d+)\'/)
+  if (added) return Number(added[1]) + Number(added[2])
+  const plain = display.match(/(\d+)/)
+  if (plain) return Number(plain[1])
+  if (clock?.value) return Math.floor(clock.value / 60)
+  return null
+}
+
 function parseEvents(data: any, espnHomeId: string, espnAwayId: string, homeTeamId: number, awayTeamId: number) {
   const events: any[] = []
   for (const event of data?.keyEvents ?? []) {
-    const type = event.type?.type
+    const type = event.type?.type ?? ''
     const text = event.text ?? ''
-    const minute = event.clock?.value ? Math.floor(event.clock.value / 60) : null
+    const minute = parseMinute(event.clock)
     const espnTeamId = event.team?.id
     const teamId = espnTeamId === espnHomeId ? homeTeamId : espnTeamId === espnAwayId ? awayTeamId : null
     if (!teamId) continue
 
-    if (type === 'goal') {
-      events.push({ type: 'goal', minute, teamId, playerName: event.participants?.[0]?.athlete?.displayName ?? null, isPenalty: text.toLowerCase().includes('penalty') || text.toLowerCase().includes('penal'), isOwnGoal: text.toLowerCase().includes('own goal') || text.toLowerCase().includes('en contra') })
+    const isGoalType = type === 'goal' || type.startsWith('goal') || type === 'penalty' || type.startsWith('penalty')
+    const isPenalty = type === 'penalty' || text.toLowerCase().includes('penalty') || text.toLowerCase().includes('penal')
+    const isOwnGoal = text.toLowerCase().includes('own goal') || text.toLowerCase().includes('en contra')
+
+    if (isGoalType) {
+      events.push({ type: 'goal', minute, teamId, playerName: event.participants?.[0]?.athlete?.displayName ?? null, isPenalty, isOwnGoal })
     } else if (type === 'yellow-card') {
       events.push({ type: 'yellow', minute, teamId, playerName: event.participants?.[0]?.athlete?.displayName ?? null })
     } else if (type === 'red-card') {
@@ -68,24 +98,30 @@ function parseLineups(data: any) {
     name: p.athlete?.displayName ?? '?',
     shirtNumber: p.jersey ? Number(p.jersey) : null,
     isStarter: p.starter ?? true,
+    position: POSITION_MAP[p.position?.abbreviation] ?? null,
   }))
   return { home: parseRoster(home), away: parseRoster(away) }
 }
 
-// Extract unique player names from events
-function extractPlayerNames(events: any[]): { name: string; teamId: number }[] {
+// Extract unique player names from events + lineups
+function extractPlayerNames(events: any[], lineups: { home: any[]; away: any[] }, homeTeamId: number, awayTeamId: number): { name: string; teamId: number }[] {
   const seen = new Set<string>()
   const players: { name: string; teamId: number }[] = []
+  const add = (name: string, teamId: number) => {
+    if (name && !seen.has(name)) { seen.add(name); players.push({ name, teamId }) }
+  }
+  // From lineups first (most complete)
+  for (const p of lineups.home) add(p.name, homeTeamId)
+  for (const p of lineups.away) add(p.name, awayTeamId)
+  // From events
   for (const e of events) {
     for (const name of [e.playerName, e.playerInName, e.playerOutName]) {
-      if (name && !seen.has(name)) {
-        seen.add(name)
-        players.push({ name, teamId: e.teamId })
-      }
+      add(name, e.teamId)
     }
   }
   return players
 }
+
 
 // Try to find matching player by last name
 function findMatch(espnName: string, players: any[]): any | null {
@@ -102,12 +138,13 @@ interface ESPNImportModalProps {
   awayTeam: { id: number; name: string; shortName: string | null } | null
   homePlayers: any[]
   awayPlayers: any[]
+  tournamentId: number
   onClose: () => void
 }
 
 type ImportStep = 'auth' | 'input' | 'mapping' | 'reconcile' | 'preview' | 'done'
 
-export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, awayPlayers, onClose }: ESPNImportModalProps) {
+export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, awayPlayers, tournamentId, onClose }: ESPNImportModalProps) {
   const [step, setStep] = useState<ImportStep>(() => sessionStorage.getItem(STORAGE_KEY) ? 'input' : 'auth')
   const [token, setToken] = useState(() => sessionStorage.getItem(STORAGE_KEY) ?? '')
   const [password, setPassword] = useState('')
@@ -125,14 +162,17 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
   const [parsedLineups, setParsedLineups] = useState<{ home: any[]; away: any[] }>({ home: [], away: [] })
   const [importEvents, setImportEvents] = useState(true)
   const [importLineup, setImportLineup] = useState(true)
+  const [importNewPlayers, setImportNewPlayers] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  // Reconciliation: espnName → { action: 'new' | 'existing', playerId?: number }
-  const [reconciliation, setReconciliation] = useState<Record<string, { action: 'new' | 'existing'; playerId?: number }>>({})
+  // Reconciliation: espnName → { action: 'new' | 'existing' | 'edit', playerId?: number }
+  const [reconciliation, setReconciliation] = useState<Record<string, { action: 'new' | 'existing' | 'edit'; playerId?: number }>>({})
   const [espnPlayerList, setEspnPlayerList] = useState<{ name: string; teamId: number }[]>([])
 
   const { mutateAsync: createEvent } = useCreateEvent(matchId)
   const { mutateAsync: setLineup } = useSetLineup(matchId)
+  const { mutateAsync: createPlayer } = useCreatePlayer()
+  const { mutateAsync: editPlayer } = useEditPlayer()
 
   const handleAuth = async () => {
     setAuthLoading(true)
@@ -162,46 +202,85 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
   const handleMapping = () => {
     const events = parseEvents(rawData, espnHomeId, espnAwayId, homeTeam?.id ?? 0, awayTeam?.id ?? 0)
     const lineups = parseLineups(rawData)
-    const playerNames = extractPlayerNames(events)
+    const playerNames = extractPlayerNames(events, lineups, homeTeam?.id ?? 0, awayTeam?.id ?? 0)
     setParsedEvents(events)
     setParsedLineups(lineups)
     setEspnPlayerList(playerNames)
 
     // Auto-match players
-    const init: Record<string, { action: 'new' | 'existing'; playerId?: number }> = {}
+    const init: Record<string, { action: 'new' | 'existing' | 'edit'; playerId?: number }> = {}
     for (const { name, teamId } of playerNames) {
       const teamPlayers = teamId === homeTeam?.id ? homePlayers : awayPlayers
       const match = findMatch(name, teamPlayers)
-      init[name] = match ? { action: 'existing', playerId: match.id } : { action: 'new' }
+      init[name] = match ? (match.position === '' ? { action: 'edit', playerId: match.id } : { action: 'existing', playerId: match.id }) : { action: 'new' }
     }
     setReconciliation(init)
     setStep('reconcile')
   }
 
   const handleImport = async () => {
-    setSaving(true)
+    setSaving(true); setError('')
     try {
-      // Build playerId map from reconciliation
-      const playerIdMap: Record<string, number | null> = {}
+      // Step 1: Build playerId map — first from existing reconciliation
+      const playerIdMap: Record<string, number> = {}
       for (const [name, rec] of Object.entries(reconciliation)) {
-        playerIdMap[name] = rec.action === 'existing' ? (rec.playerId ?? null) : null
+        if (rec.action === 'existing' && rec.playerId) {
+          playerIdMap[name] = rec.playerId
+        }
       }
 
+      // Step 2: Create new players and await each one
+      for (const { name, teamId } of espnPlayerList) {
+        const rec = reconciliation[name]
+        if (!rec || rec.action === 'existing') continue
+        const parts = name.trim().split(' ')
+        const firstName = parts[0]
+        const lastName = parts.slice(1).join(' ') || parts[0]
+        const lineupEntry = [...parsedLineups.home, ...parsedLineups.away].find(p => p.name === name)
+        const newPlayer = rec.action === 'new' ? await createPlayer({
+          token,
+          payload: { firstName, lastName, teamId, tournamentId, position: lineupEntry?.position ?? '' }
+        }) : await editPlayer({
+          token,
+          playerId: rec.playerId!,
+          payload: { firstName, lastName, teamId, tournamentId, position: lineupEntry?.position ?? '' }
+        })
+        if (newPlayer?.id) playerIdMap[name] = newPlayer.id
+      }
+
+      // Step 3: Save lineup
+      if (importLineup) {
+        if (homeTeam && parsedLineups.home.length > 0) {
+          const players = parsedLineups.home
+            .map(p => ({ playerId: playerIdMap[p.name], isStarter: p.isStarter, shirtNumber: p.shirtNumber }))
+            .filter(p => p.playerId)
+          await setLineup({ token, teamId: homeTeam.id, players })
+        }
+        if (awayTeam && parsedLineups.away.length > 0) {
+          const players = parsedLineups.away
+            .map(p => ({ playerId: playerIdMap[p.name], isStarter: p.isStarter, shirtNumber: p.shirtNumber }))
+            .filter(p => p.playerId)
+          await setLineup({ token, teamId: awayTeam.id, players })
+        }
+      }
+
+      // Step 4: Save events — always require a playerId
       if (importEvents) {
         for (const event of parsedEvents) {
           const pName = event.playerName ?? event.playerInName
-          const playerId = pName ? playerIdMap[pName] : null
-          await createEvent({ token, payload: { matchId, type: event.type, minute: event.minute, teamId: event.teamId, playerId, isPenalty: event.isPenalty ?? false, isOwnGoal: event.isOwnGoal ?? false } })
+          const playerId = pName ? playerIdMap[pName] : undefined
+          if (!playerId) continue // skip events without a resolvable player
+          await createEvent({
+            token, payload: {
+              matchId, type: event.type, minute: event.minute,
+              teamId: event.teamId, playerId,
+              isPenalty: event.isPenalty ?? false,
+              isOwnGoal: event.isOwnGoal ?? false,
+            }
+          })
         }
       }
-      if (importLineup) {
-        if (homeTeam && parsedLineups.home.length > 0) {
-          await setLineup({ token, teamId: homeTeam.id, players: parsedLineups.home.map(p => ({ playerId: playerIdMap[p.name] ?? null, isStarter: p.isStarter, shirtNumber: p.shirtNumber })) })
-        }
-        if (awayTeam && parsedLineups.away.length > 0) {
-          await setLineup({ token, teamId: awayTeam.id, players: parsedLineups.away.map(p => ({ playerId: playerIdMap[p.name] ?? null, isStarter: p.isStarter, shirtNumber: p.shirtNumber })) })
-        }
-      }
+
       setStep('done')
     } catch (e: any) { setError('Error al importar: ' + e.message) }
     finally { setSaving(false) }
@@ -302,10 +381,10 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                             <span className="text-sm text-white">{name}</span>
                             <span className="text-xs text-gray-500 ml-2">{teamName}</span>
                           </div>
-                          {rec.action === 'existing' ? (
+                          {(rec.action === 'existing' || rec.action === 'edit') ? (
                             <button onClick={() => setReconciliation(prev => ({ ...prev, [name]: { action: 'new' } }))}
                               className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-emerald-700 text-white hover:bg-red-800 hover:text-white transition-colors">
-                              <Check size={10} /> Vinculado
+                              <Check size={10} /> Vinculado {rec.action === 'edit' ? '(editar)' : ''}
                             </button>
                           ) : (
                             <button onClick={() => setReconciliation(prev => ({ ...prev, [name]: { action: 'existing', playerId: pendingId } }))}
@@ -327,7 +406,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                           )
                         })()}
                         {rec.action === 'new' && (
-                          <p className="text-xs text-gray-600">Se guardará el evento sin vincular a un jugador de la BD</p>
+                          <p className="text-xs text-gray-600">Se creará el jugador y se guardará el evento en la BD</p>
                         )}
                       </div>
                     )
@@ -353,6 +432,10 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                   <label className="flex items-center gap-2 cursor-pointer flex-1">
                     <input type="checkbox" checked={importLineup} onChange={e => setImportLineup(e.target.checked)} className="accent-[#74ACDF]" />
                     <span className="text-sm text-white">Alineación</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer flex-1">
+                    <input type="checkbox" checked={importNewPlayers} onChange={e => setImportNewPlayers(e.target.checked)} className="accent-[#74ACDF]" />
+                    <span className="text-sm text-white">Nuevos ({Object.keys(reconciliation).filter(key => reconciliation[key].action === 'new').length})</span>
                   </label>
                 </div>
 
@@ -380,7 +463,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                 {error && <p className="text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12} />{error}</p>}
 
                 <div className="flex gap-2">
-                  <button onClick={() => setStep('reconcile')} className="flex-1 py-2 rounded-lg bg-gray-800 text-gray-300 text-sm hover:bg-gray-700 transition-colors">Atrás</button>
+                  <button onClick={() => setStep('reconcile')} disabled={saving || (!importEvents && !importLineup)} className="flex-1 py-2 rounded-lg bg-gray-800 text-gray-300 text-sm hover:bg-gray-700 transition-colors">Atrás</button>
                   <button onClick={handleImport} disabled={saving || (!importEvents && !importLineup)}
                     className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
                     <Check size={14} />{saving ? 'Importando...' : 'Importar'}
