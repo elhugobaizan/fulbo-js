@@ -79,9 +79,9 @@ function parseEvents(data: any, espnHomeId: string, espnAwayId: string, homeTeam
     const teamId = espnTeamId === espnHomeId ? homeTeamId : espnTeamId === espnAwayId ? awayTeamId : null
     if (!teamId) continue
 
-    const isGoalType = type === 'goal' || type.startsWith('goal') || type === 'penalty' || type.startsWith('penalty')
+    const isGoalType = type === 'goal' || type.startsWith('goal') || type === 'penalty' || type.startsWith('penalty') || type === 'own-goal'
     const isPenalty = type === 'penalty' || text.toLowerCase().includes('penalty') || text.toLowerCase().includes('penal')
-    const isOwnGoal = text.toLowerCase().includes('own goal') || text.toLowerCase().includes('en contra')
+    const isOwnGoal = text.toLowerCase().includes('own goal') || text.toLowerCase().includes('en contra') || type === 'own-goal'
 
     if (isGoalType) {
       events.push({ type: 'goal', minute, teamId, playerName: event.participants?.[0]?.athlete?.displayName ?? null, isPenalty, isOwnGoal })
@@ -275,7 +275,6 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
         for (const event of parsedEvents) {
           const pName = event.playerName ?? event.playerInName
           const playerId = pName ? playerIdMap[pName] : undefined
-          console.log('Importando evento', { ...event, playerId, pName, playerIdMap })
           if (!playerId) continue // skip events without a resolvable player
           await createEvent({
             token, payload: {
