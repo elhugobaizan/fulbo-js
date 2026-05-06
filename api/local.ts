@@ -304,7 +304,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // top scorers local - calculated from events
     if (resource === 'local-topscorers') {
       const events = await getTournamentEvents(db, tournamentId)
-      const goalEvents = events.filter((e: any) => e.event.type === 'goal' && !e.event.isOwnGoal && e.event.player)
+      const goalEvents = events.filter((e: any) => e.event.type === 'goal' && !e.event.isOwnGoal && e.player)
       const byPlayer: Record<number, any> = {}
       for (const e of goalEvents) {
         const pid = e.event.playerId
@@ -317,7 +317,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // top assists local - calculated from events
     if (resource === 'local-topassists') {
       const events = await getTournamentEvents(db, tournamentId)
-      const assistEvents = events.filter((e: any) => e.event.type === 'assist' && e.event.player)
+      const assistEvents = events.filter((e: any) => e.event.type === 'assist' && e.player)
       const byPlayer: Record<number, any> = {}
       for (const e of assistEvents) {
         const pid = e.event.playerId
@@ -330,7 +330,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // top cards local - calculated from events
     if (resource === 'local-topcards') {
       const events = await getTournamentEvents(db, tournamentId)
-      const cardEvents = events.filter((e: any) => (e.event.type === 'yellow' || e.event.type === 'red') && e.event.player)
+      const cardEvents = events.filter((e: any) => (e.event.type === 'yellow' || e.event.type === 'red') && e.player)
       const byPlayer: Record<number, any> = {}
       for (const e of cardEvents) {
         const pid = e.event.playerId
