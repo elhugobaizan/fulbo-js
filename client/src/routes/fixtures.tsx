@@ -294,12 +294,18 @@ function FixturesPage() {
 
                   {/* Direct matchday picker */}
                   <div className="flex gap-1.5 flex-wrap">
-                    {matchdays.map(day => (
-                      <button key={day} onClick={() => handleMatchdayChange(day)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${currentMatchday === day ? 'bg-[#74ACDF] text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
-                        {day}
-                      </button>
-                    ))}
+                    {matchdays.map(day => {
+                      const isActive = currentMatchday === day
+                      const allHaveEvents = isActive && localData.matches.length > 0 &&
+                        localData.matches.every((m: any) => (m.eventCount ?? 0) > 0)
+                      return (
+                        <button key={day} onClick={() => handleMatchdayChange(day)}
+                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${isActive ? 'bg-[#74ACDF] text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                          {day}
+                          {allHaveEvents && <Check size={10} />}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}
