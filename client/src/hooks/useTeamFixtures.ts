@@ -13,17 +13,17 @@ export interface TeamFixture {
   awayScore: number | null
 }
 
-async function fetchTeamFixtures(teamId: number, limit = 3): Promise<TeamFixture[]> {
+async function fetchTeamFixtures(teamId: number, limit = 3, all = false): Promise<TeamFixture[]> {
   const { data } = await apiClient.get('/local', {
-    params: { resource: 'team-fixtures', teamId, limit },
+    params: { resource: 'team-fixtures', teamId, limit, ...(all ? { all: 'true' } : {}) },
   })
   return data.data ?? []
 }
 
-export function useTeamFixtures(teamId: number, limit = 3) {
+export function useTeamFixtures(teamId: number, limit = 3, all = false) {
   return useQuery({
-    queryKey: ['team-fixtures', teamId, limit],
-    queryFn: () => fetchTeamFixtures(teamId, limit),
+    queryKey: ['team-fixtures', teamId, limit, all],
+    queryFn: () => fetchTeamFixtures(teamId, limit, all),
     staleTime: 1000 * 60 * 5,
     enabled: teamId > 0,
   })

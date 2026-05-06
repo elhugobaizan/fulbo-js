@@ -15,6 +15,7 @@ export const Route = createFileRoute('/match/$matchId')({
 
 const EVENT_ICONS: Record<string, string> = {
   goal: '⚽',
+  save: '🧤',
   assist: '🅰️',
   yellow: '🟨',
   red: '🟥',
@@ -49,7 +50,6 @@ function MatchPage() {
   const [showESPN, setShowESPN] = useState(false)
   const homeTeamId = match?.homeTeamId ?? 0
   const awayTeamId = match?.awayTeamId ?? 0
-
   const { data: homePlayers = [] } = usePlayersByTeam(homeTeamId)
   const { data: awayPlayers = [] } = usePlayersByTeam(awayTeamId)
 
@@ -181,6 +181,14 @@ function MatchPage() {
 
       {isFinished && allEvents.length === 0 && (
         <p className="text-gray-600 text-sm text-center py-4">Sin incidencias cargadas</p>
+      )}
+
+      {location.hostname === 'localhost' && match && (
+        <div className="fixed bottom-20 right-3 z-40 bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 font-mono text-[15px] text-fuchsia-700 shadow-xl space-y-0.5 select-all">
+          <p><span className="text-emerald-600">match:</span> {match.id}</p>
+          <p><span className="text-emerald-600">home:</span> {match.homeTeamId}</p>
+          <p><span className="text-emerald-600">away:</span> {match.awayTeamId}</p>
+        </div>
       )}
 
       {isFinished && (

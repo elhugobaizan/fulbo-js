@@ -112,15 +112,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const allMatches = await db.select().from(matches).where(eq(matches.phase, 'group'))
 
+      const all = req.query.all === 'true'
       const teamMatches = allMatches
         .filter((m: any) =>
           (m.homeTeamId === teamId || m.awayTeamId === teamId) &&
-          m.status !== 'finished' &&
-          m.scheduledAt !== null
+          (all || (m.status !== 'finished' && m.scheduledAt !== null))
         )
-        .sort((a: any, b: any) =>
-          new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
-        )
+        .sort((a: any, b: any) => {
+          if (a.scheduledAt && b.scheduledAt)
+            return new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
+          return (b.matchday ?? 0) - (a.matchday ?? 0)
+        })
         .slice(0, limit)
 
       if (teamMatches.length === 0) return ok(res, [])
@@ -136,6 +138,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const teamById = Object.fromEntries(teamsData.map((t: any) => [t.id, t]))
       const tournamentById = Object.fromEntries(tournamentsData.map((t: any) => [t.id, t]))
 
+      // Count events per match
+      const matchIdsList = teamMatches.map((m: any) => m.id)
+      const eventsData = matchIdsList.length > 0
+        ? await db.select().from(matchEvents).where(inArray(matchEvents.matchId, matchIdsList))
+        : []
+      const eventCountByMatch: Record<number, number> = {}
+      for (const e of eventsData) {
+        eventCountByMatch[e.matchId] = (eventCountByMatch[e.matchId] ?? 0) + 1
+      }
+
       const enriched = teamMatches.map((m: any) => ({
         id: m.id,
         matchday: m.matchday,
@@ -146,6 +158,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         awayTeam: m.awayTeamId ? teamById[m.awayTeamId] : null,
         homeScore: m.homeScore,
         awayScore: m.awayScore,
+        eventCount: eventCountByMatch[m.id] ?? 0,
       }))
 
       return ok(res, enriched)
@@ -199,10 +212,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const teamIds = [...new Set(dayMatches.flatMap((m: any) => [m.homeTeamId, m.awayTeamId].filter(Boolean)))] as number[]
       const teamsData = teamIds.length > 0 ? await db.select().from(teams).where(inArray(teams.id, teamIds)) : []
       const teamById = Object.fromEntries(teamsData.map((t: any) => [t.id, t]))
+      const dayMatchIds = dayMatches.map((m: any) => m.id)
+      const dayEventsData = dayMatchIds.length > 0
+        ? await db.select().from(matchEvents).where(inArray(matchEvents.matchId, dayMatchIds))
+        : []
+      const dayEventCount: Record<number, number> = {}
+      for (const e of dayEventsData) {
+        dayEventCount[e.matchId] = (dayEventCount[e.matchId] ?? 0) + 1
+      }
+
       const enriched = dayMatches.sort((a: any, b: any) => {
         if (!a.scheduledAt) return 1; if (!b.scheduledAt) return -1
         return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
-      }).map((m: any) => ({ id: m.id, matchday: m.matchday, scheduledAt: m.scheduledAt, status: m.status, homeTeam: m.homeTeamId ? teamById[m.homeTeamId] : null, awayTeam: m.awayTeamId ? teamById[m.awayTeamId] : null, homeScore: m.homeScore, awayScore: m.awayScore, homePenalties: m.homePenalties, awayPenalties: m.awayPenalties }))
+      }).map((m: any) => ({ id: m.id, matchday: m.matchday, scheduledAt: m.scheduledAt, status: m.status, homeTeam: m.homeTeamId ? teamById[m.homeTeamId] : null, awayTeam: m.awayTeamId ? teamById[m.awayTeamId] : null, homeScore: m.homeScore, awayScore: m.awayScore, homePenalties: m.homePenalties, awayPenalties: m.awayPenalties, eventCount: dayEventCount[m.id] ?? 0 }))
       return ok(res, { matchday: target, matchdays: allMatchdays, matches: enriched })
     }
 
@@ -282,7 +304,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // top scorers local - calculated from events
     if (resource === 'local-topscorers') {
       const events = await getTournamentEvents(db, tournamentId)
-      const goalEvents = events.filter((e: any) => e.event.type === 'goal' && !e.event.isOwnGoal && e.player)
+      const goalEvents = events.filter((e: any) => e.event.type === 'goal' && !e.event.isOwnGoal && e.event.player)
       const byPlayer: Record<number, any> = {}
       for (const e of goalEvents) {
         const pid = e.event.playerId
@@ -295,7 +317,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // top assists local - calculated from events
     if (resource === 'local-topassists') {
       const events = await getTournamentEvents(db, tournamentId)
-      const assistEvents = events.filter((e: any) => e.event.type === 'assist' && e.player)
+      const assistEvents = events.filter((e: any) => e.event.type === 'assist' && e.event.player)
       const byPlayer: Record<number, any> = {}
       for (const e of assistEvents) {
         const pid = e.event.playerId
@@ -308,7 +330,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // top cards local - calculated from events
     if (resource === 'local-topcards') {
       const events = await getTournamentEvents(db, tournamentId)
-      const cardEvents = events.filter((e: any) => (e.event.type === 'yellow' || e.event.type === 'red') && e.player)
+      const cardEvents = events.filter((e: any) => (e.event.type === 'yellow' || e.event.type === 'red') && e.event.player)
       const byPlayer: Record<number, any> = {}
       for (const e of cardEvents) {
         const pid = e.event.playerId
@@ -375,6 +397,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const assists = playerEvents.filter((e: any) => e.type === 'assist').length
       const yellowCards = playerEvents.filter((e: any) => e.type === 'yellow').length
       const redCards = playerEvents.filter((e: any) => e.type === 'red').length
+      const penaltySaves = playerEvents.filter((e: any) => e.type === 'save').length
 
       // Played/started from lineups (preferred) or events (fallback)
       const matchesAsStarter = new Set<number>()
@@ -414,7 +437,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         minutesPlayed += subInEvent?.minute ? (90 - subInEvent.minute) : 45
       }
 
-      return ok(res, { played, started, subIn, goals, assists, yellowCards, redCards, minutesPlayed })
+      return ok(res, { played, started, subIn, goals, assists, yellowCards, redCards, minutesPlayed, penaltySaves })
     }
 
     return err(res, 'Unknown resource', 400)

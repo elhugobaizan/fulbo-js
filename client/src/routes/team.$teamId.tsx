@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, Star, Users, UserPlus } from 'lucide-react'
+import { ArrowLeft, Star, Users, UserPlus, Calendar } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import { apiClient } from '../lib/api'
-import { CURRENT_SEASON } from '../config/leagues'
 import { useFavorites } from '../hooks/useFavorites'
 import { PlayerModal } from '../components/PlayerModal'
 import { TeamBadge } from '../components/TeamBadge'
@@ -13,6 +12,7 @@ import { AddPlayerModal } from '../components/AddPlayerModal'
 import { LocalPlayerModal } from '../components/LocalPlayerModal'
 import { usePlayersByTeam, useTournamentTeams, useTeamTournaments } from '../hooks/useLocalPlayers'
 import { useActiveTournament } from '../hooks/useActiveTournament'
+import { useTeamFixtures } from '../hooks/useTeamFixtures'
 import type { Player } from '../types/football'
 
 const searchSchema = z.object({
@@ -47,25 +47,12 @@ async function fetchTeamInfo(teamId: number): Promise<TeamInfo | null> {
   return data.data?.[0] ?? null
 }
 
-async function fetchSquad(teamId: number, season: number): Promise<Player[]> {
-  const { data } = await apiClient.get('/football', { params: { resource: 'players', teamId, season } })
-  return data.data ?? []
-}
-
 async function fetchLocalTeam(teamId: number): Promise<LocalTeam | null> {
   const { data } = await apiClient.get('/local', { params: { resource: 'team', teamId, tournamentId: 1 } })
   return data.data ?? null
 }
 
 // ─── Position labels ──────────────────────────────────────────────────────────
-
-const POSITION_ORDER: Record<string, number> = {
-  Goalkeeper: 0, Defender: 1, Midfielder: 2, Attacker: 3,
-}
-const POSITION_LABELS: Record<string, string> = {
-  Goalkeeper: 'Arqueros', Defender: 'Defensores',
-  Midfielder: 'Mediocampistas', Attacker: 'Delanteros',
-}
 
 // ─── Local team header ────────────────────────────────────────────────────────
 
@@ -189,24 +176,8 @@ function TeamPage() {
   const { data: teamTournaments = [] } = useTeamTournaments(local ? numericId : 0)
   const [showAddPlayer, setShowAddPlayer] = useState(false)
   const [selectedLocalPlayer, setSelectedLocalPlayer] = useState<any>(null)
-
-  const { data: squad = [], isLoading: loadingSquad } = useQuery({
-    queryKey: ['squad', numericId, CURRENT_SEASON],
-    queryFn: () => fetchSquad(numericId, CURRENT_SEASON),
-    staleTime: 1000 * 60 * 30,
-    enabled: !local, // solo para equipos de API externa
-  })
-
-  const grouped = squad.reduce<Record<string, Player[]>>((acc, player) => {
-    const pos = player.statistics[0]?.games?.position ?? 'Unknown'
-    if (!acc[pos]) acc[pos] = []
-    acc[pos].push(player)
-    return acc
-  }, {})
-
-  const sortedPositions = Object.keys(grouped).sort(
-    (a, b) => (POSITION_ORDER[a] ?? 99) - (POSITION_ORDER[b] ?? 99)
-  )
+  const [activeTab, setActiveTab] = useState<'squad' | 'fixtures'>('squad')
+  const { data: teamFixtures = [] } = useTeamFixtures(numericId, 20, true)
 
   const handleToggleFavorite = () => {
     if (local && localTeam) {
@@ -216,7 +187,6 @@ function TeamPage() {
     }
   }
 
-  const isLoadingHeader = local ? loadingLocal : loadingInfo
 
   return (
     <div className="space-y-5">
@@ -226,7 +196,7 @@ function TeamPage() {
       </button>
 
       {/* Header */}
-      {isLoadingHeader ? (
+      {(local ? loadingLocal : loadingInfo) ? (
         <TeamHeaderSkeleton />
       ) : local && localTeam ? (
         <LocalTeamHeader
@@ -265,8 +235,22 @@ function TeamPage() {
         </div>
       )}
 
-      {/* Local squad */}
+      {/* Tab toggle - only for local teams */}
       {local && (
+        <div className="flex gap-1 bg-gray-900 p-1 rounded-xl border border-gray-800 w-fit">
+          <button onClick={() => setActiveTab('squad')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'squad' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+            <Users size={13} /> Plantel
+          </button>
+          <button onClick={() => setActiveTab('fixtures')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'fixtures' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+            <Calendar size={13} /> Partidos
+          </button>
+        </div>
+      )}
+
+      {/* Local squad */}
+      {local && activeTab === 'squad' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
@@ -345,41 +329,72 @@ function TeamPage() {
         </div>
       )}
 
-      {/* API Squad */}
-      {!local && loadingSquad ? (
-        <SquadSkeleton />
-      ) : (squad.length === 0 && !local) ? (
-        <NoSquad isLocal={false} />
-      ) : (
-        <div className="space-y-5">
-          {sortedPositions.map((position) => (
-            <div key={position}>
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">
-                {POSITION_LABELS[position] ?? position} ({grouped[position].length})
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {grouped[position].map((player) => (
-                  <button key={player.player.id} onClick={() => setSelectedPlayer(player)}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 bg-gray-900/40 hover:bg-gray-900/80 transition-colors text-left">
-                    <img src={player.player.photo} alt={player.player.name}
-                      className="w-10 h-10 rounded-full object-cover bg-gray-800 flex-shrink-0"
-                      onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${player.player.name}&background=1f2937&color=fff` }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{player.player.name}</p>
-                      <p className="text-xs text-gray-400">{player.player.nationality} · {player.player.age} años</p>
-                    </div>
-                    {player.statistics[0]?.games?.rating && (
-                      <span className="text-sm font-bold text-gray-300 flex-shrink-0">
-                        {parseFloat(player.statistics[0].games.rating).toFixed(1)}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
+      {/* Local fixtures tab */}
+      {local && activeTab === 'fixtures' && (
+        <div className="space-y-2">
+          {teamFixtures.length === 0 ? (
+            <div className="rounded-xl border border-gray-800 p-8 text-center">
+              <p className="text-gray-400 text-sm">No hay partidos registrados</p>
             </div>
-          ))}
+          ) : (
+            teamFixtures.map((match: any) => {
+              const isHome = match.homeTeam?.id === numericId
+              const opponent = isHome ? match.awayTeam : match.homeTeam
+              const isFinished = match.status === 'finished'
+              const homeWon = isFinished && (match.homeScore ?? 0) > (match.awayScore ?? 0)
+              const awayWon = isFinished && (match.awayScore ?? 0) > (match.homeScore ?? 0)
+              const teamWon = isHome ? homeWon : awayWon
+              const teamLost = isHome ? awayWon : homeWon
+              return (
+                <button key={match.id}
+                  onClick={() => isFinished && navigate({ to: '/match/$matchId', params: { matchId: String(match.id) } })}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${isFinished ? 'border-gray-800 bg-gray-900/40 hover:bg-gray-900/70 cursor-pointer' : 'border-dashed border-gray-700 bg-gray-900/20 cursor-default'}`}>
+                  {/* Result badge */}
+                  {isFinished && (
+                    <span className={`text-xs font-bold w-5 flex-shrink-0 ${teamWon ? 'text-emerald-400' : teamLost ? 'text-red-400' : 'text-gray-400'}`}>
+                      {teamWon ? 'G' : teamLost ? 'P' : 'E'}
+                    </span>
+                  )}
+                  {/* Opponent */}
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="text-xs text-gray-500 flex-shrink-0">{isHome ? 'vs' : 'en'}</span>
+                    <span className="text-sm text-white truncate">{opponent?.shortName ?? opponent?.name ?? '?'}</span>
+                  </div>
+                  {isFinished && (
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${match.eventCount > 0 ? 'bg-emerald-500' : 'bg-gray-600'}`} />
+                  )}
+                  {/* Score or date */}
+                  <div className="text-right flex-shrink-0 space-y-0.5">
+                    {isFinished ? (
+                      <span className="text-sm font-bold text-white block">
+                        {isHome ? `${match.homeScore}-${match.awayScore}` : `${match.awayScore}-${match.homeScore}`}
+                      </span>
+                    ) : null}
+                    {match.scheduledAt && (
+                      <span className="text-xs text-gray-500 block">
+                        {(() => { const [y, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) })()}
+                      </span>
+                    ) ? (
+                      <span className="text-xs text-gray-500 flex-shrink-0">
+                        {(() => { const [y, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) })()}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-600 flex-shrink-0">Fecha {match.matchday}</span>
+                    )}
+                  </div>
+                  {/* Tournament */}
+                  {match.tournament && (
+                    <span className="text-[10px] text-gray-600 flex-shrink-0 hidden sm:block">
+                      {match.tournament.shortName ?? match.tournament.name}
+                    </span>
+                  )}
+                </button>
+              )
+            })
+          )}
         </div>
       )}
+
 
       <PlayerModal player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />
     </div>
@@ -394,22 +409,6 @@ function TeamHeaderSkeleton() {
         <div className="w-48 h-6 bg-gray-800 rounded" />
         <div className="w-64 h-4 bg-gray-700 rounded" />
       </div>
-    </div>
-  )
-}
-
-function SquadSkeleton() {
-  return (
-    <div className="space-y-2 animate-pulse">
-      {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800">
-          <div className="w-10 h-10 bg-gray-800 rounded-full" />
-          <div className="flex-1 space-y-1.5">
-            <div className="w-32 h-4 bg-gray-800 rounded" />
-            <div className="w-24 h-3 bg-gray-700 rounded" />
-          </div>
-        </div>
-      ))}
     </div>
   )
 }
