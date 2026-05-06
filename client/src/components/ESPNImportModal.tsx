@@ -4,6 +4,7 @@ import { useCreateEvent } from '../hooks/useMatchEvents'
 import { useSetLineup } from '../hooks/useMatchLineup'
 import { useCreatePlayer, useEditPlayer } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
+import { useQueryClient } from '@tanstack/react-query'
 
 const STORAGE_KEY = 'futbol-ar:admin-token'
 
@@ -188,6 +189,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
   const { mutateAsync: setLineup } = useSetLineup(matchId)
   const { mutateAsync: createPlayer } = useCreatePlayer()
   const { mutateAsync: editPlayer } = useEditPlayer()
+  const queryClient = useQueryClient()
 
   const handleAuth = async () => {
     setAuthLoading(true)
@@ -295,7 +297,8 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
           })
         }
       }
-
+      queryClient.invalidateQueries({ queryKey: ['match-events', matchId] })
+      queryClient.invalidateQueries({ queryKey: ['match-detail', matchId] })
       setStep('done')
     } catch (e: any) { setError('Error al importar: ' + e.message) }
     finally { setSaving(false) }
@@ -478,7 +481,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                 {error && <p className="text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12} />{error}</p>}
 
                 <div className="flex gap-2">
-                  <button onClick={() => setStep('reconcile')} disabled={saving || (!importEvents && !importLineup)} className="flex-1 py-2 rounded-lg bg-gray-800 text-gray-300 text-sm hover:bg-gray-700 transition-colors">Atrás</button>
+                  <button onClick={() => setStep('reconcile')} disabled={saving} className="flex-1 py-2 rounded-lg bg-gray-800 text-gray-300 text-sm hover:bg-gray-700 transition-colors disabled:opacity-50">Atrás</button>
                   <button onClick={handleImport} disabled={saving || (!importEvents && !importLineup)}
                     className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
                     <Check size={14} />{saving ? 'Importando...' : 'Importar'}
