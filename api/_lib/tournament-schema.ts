@@ -102,6 +102,8 @@ export const matches = pgTable('matches', {
   homePenalties: integer('home_penalties'),
   awayPenalties: integer('away_penalties'),
 
+  espnMatchId: integer('espn_match_id'), // ID de partido en API de ESPN (opcional)
+
   // Fecha y hora
   scheduledAt: timestamp('scheduled_at'),
   createdAt: timestamp('created_at').defaultNow(),

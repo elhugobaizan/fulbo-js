@@ -179,6 +179,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
   const [importEvents, setImportEvents] = useState(true)
   const [importLineup, setImportLineup] = useState(true)
   const [importNewPlayers, setImportNewPlayers] = useState(true)
+  const [espnMatchIdExtracted, setEspnMatchIdExtracted] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   // Reconciliation: espnName → { action: 'new' | 'existing' | 'edit', playerId?: number }
@@ -206,6 +207,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
     try {
       const m = url.match(/juegoId\/(\d+)/) ?? url.match(/gameId\/(\d+)/) ?? url.match(/event=(\d+)/) ?? url.match(/\/(\d+)$/)
       if (!m) throw new Error('No se pudo extraer el ID del partido de la URL')
+      setEspnMatchIdExtracted(m[1])
       const data = await fetchESPNSummary(m[1], league)
       const teams = extractESPNTeams(data)
       setEspnTeams(teams)
@@ -296,6 +298,9 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
             }
           })
         }
+      }
+      if (espnMatchIdExtracted) {
+        await apiClient.patch('/admin?action=matches', { matchId, espnMatchId: Number(espnMatchIdExtracted) }, { headers: { 'x-admin-token': token } })
       }
       queryClient.invalidateQueries({ queryKey: ['match-events', matchId] })
       queryClient.invalidateQueries({ queryKey: ['match-detail', matchId] })
