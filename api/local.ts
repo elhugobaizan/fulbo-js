@@ -151,6 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const enriched = teamMatches.map((m: any) => ({
         id: m.id,
         matchday: m.matchday,
+        knockoutRound: m.knockoutRound,   // ← agregar
         scheduledAt: m.scheduledAt,
         status: m.status,
         tournament: tournamentById[m.tournamentId] ?? null,

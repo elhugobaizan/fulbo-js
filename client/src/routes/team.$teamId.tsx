@@ -338,56 +338,46 @@ function TeamPage() {
             </div>
           ) : (
             teamFixtures.map((match: any) => {
-              const isHome = match.homeTeam?.id === numericId
-              const opponent = isHome ? match.awayTeam : match.homeTeam
               const isFinished = match.status === 'finished'
               const homeWon = isFinished && (match.homeScore ?? 0) > (match.awayScore ?? 0)
               const awayWon = isFinished && (match.awayScore ?? 0) > (match.homeScore ?? 0)
-              const teamWon = isHome ? homeWon : awayWon
-              const teamLost = isHome ? awayWon : homeWon
+              const phase = match.knockoutRound
+                ? ({ round_of_16: 'Octavos', quarterfinal: 'Cuartos', semifinal: 'Semifinal', final: 'Final' } as Record<string, string>)[match.knockoutRound] ?? match.knockoutRound
+                : match.matchday ? `Fecha ${match.matchday}` : null
               return (
                 <button key={match.id}
                   onClick={() => isFinished && navigate({ to: '/match/$matchId', params: { matchId: String(match.id) } })}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${isFinished ? 'border-gray-800 bg-gray-900/40 hover:bg-gray-900/70 cursor-pointer' : 'border-dashed border-gray-700 bg-gray-900/20 cursor-default'}`}>
-                  {/* Result badge */}
-                  {isFinished && (
-                    <span className={`text-xs font-bold w-5 flex-shrink-0 ${teamWon ? 'text-emerald-400' : teamLost ? 'text-red-400' : 'text-gray-400'}`}>
-                      {teamWon ? 'G' : teamLost ? 'P' : 'E'}
-                    </span>
-                  )}
-                  {/* Opponent */}
+                  {/* Left: badges + score */}
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="text-xs text-gray-500 flex-shrink-0">{isHome ? 'vs' : 'en'}</span>
-                    <span className="text-sm text-white truncate">{opponent?.shortName ?? opponent?.name ?? '?'}</span>
-                  </div>
-                  {isFinished && (
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${match.eventCount > 0 ? 'bg-emerald-500' : 'bg-gray-600'}`} />
-                  )}
-                  {/* Score or date */}
-                  <div className="text-right flex-shrink-0 space-y-0.5">
-                    {isFinished ? (
-                      <span className="text-sm font-bold text-white block">
-                        {isHome ? `${match.homeScore}-${match.awayScore}` : `${match.awayScore}-${match.homeScore}`}
-                      </span>
-                    ) : null}
-                    {match.scheduledAt && (
-                      <span className="text-xs text-gray-500 block">
-                        {(() => { const [y, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) })()}
-                      </span>
-                    ) ? (
-                      <span className="text-xs text-gray-500 flex-shrink-0">
-                        {(() => { const [y, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) })()}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-600 flex-shrink-0">Fecha {match.matchday}</span>
-                    )}
-                  </div>
-                  {/* Tournament */}
-                  {match.tournament && (
-                    <span className="text-[10px] text-gray-600 flex-shrink-0 hidden sm:block">
-                      {match.tournament.shortName ?? match.tournament.name}
+                    <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                      <TeamBadge name={match.homeTeam?.name ?? '?'} logo={match.homeTeam?.logoUrl} size={20} />
+                      <span className="text-[9px] text-gray-500 truncate max-w-[36px]">{match.homeTeam?.shortName ?? match.homeTeam?.name?.split(' ')[0] ?? '?'}</span>
+                    </div>
+                    <span className={`text-sm font-bold w-4 text-center ${homeWon ? 'text-white' : 'text-gray-500'}`}>
+                      {isFinished ? match.homeScore : '–'}
                     </span>
-                  )}
+                    <span className="text-gray-600 text-xs">-</span>
+                    <span className={`text-sm font-bold w-4 text-center ${awayWon ? 'text-white' : 'text-gray-500'}`}>
+                      {isFinished ? match.awayScore : '–'}
+                    </span>
+                    <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                      <TeamBadge name={match.awayTeam?.name ?? '?'} logo={match.awayTeam?.logoUrl} size={20} />
+                      <span className="text-[9px] text-gray-500 truncate max-w-[36px]">{match.awayTeam?.shortName ?? match.awayTeam?.name?.split(' ')[0] ?? '?'}</span>
+                    </div>
+                  </div>
+                  {/* Right: date + tournament + phase */}
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs text-gray-400">
+                      {match.scheduledAt
+                        ? (() => { const [y, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) })()
+                        : 'TBD'}
+                    </p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">
+                      {match.tournament?.shortName ?? match.tournament?.name ?? ''}
+                      {phase ? ` · ${phase}` : ''}
+                    </p>
+                  </div>
                 </button>
               )
             })
