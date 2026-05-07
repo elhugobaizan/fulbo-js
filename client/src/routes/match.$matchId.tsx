@@ -149,7 +149,7 @@ function MatchPage() {
         <div className="space-y-2">
           <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Incidencias</h2>
           <div className="rounded-xl border border-gray-800 overflow-hidden divide-y divide-gray-800/60">
-            {allEvents.map((event: any) => {
+            {allEvents.filter((e: any) => e.type !== 'save' && e.type !== 'missed').map((event: any) => {
               const isHome = event.teamId === match.homeTeamId
               const team = isHome ? match.homeTeam : match.awayTeam
               return (
