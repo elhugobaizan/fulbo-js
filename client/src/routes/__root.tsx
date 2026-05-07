@@ -25,7 +25,10 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         <BottomNav />
       </div>
 
-      <div className="text-center py-4 md:pb-4 pb-24">
+      <div className="flex justify-between items-center px-4 py-4 md:pb-4 pb-24">
+        <span className="text-xs text-gray-600">
+          v{__APP_VERSION__} · {__BUILD_DATE__}
+        </span>
         <a href="/admin" className="text-xs text-gray-700 hover:text-gray-500 transition-colors">
           Admin
         </a>

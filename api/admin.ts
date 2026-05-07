@@ -61,7 +61,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (req.method === 'PATCH') {
         const { matchId, homeScore, awayScore, homePenalties, awayPenalties, status, espnMatchId } = req.body
         if (!matchId) return err(res, 'matchId required', 400)
-        const setFields: any = { homeScore: homeScore ?? null, awayScore: awayScore ?? null, homePenalties: homePenalties ?? null, awayPenalties: awayPenalties ?? null, status: status ?? 'finished', updatedAt: new Date() }
+        const setFields: any = { updatedAt: new Date() }
+        if (homeScore !== undefined) setFields.homeScore = homeScore ?? null
+        if (awayScore !== undefined) setFields.awayScore = awayScore ?? null
+        if (homePenalties !== undefined) setFields.homePenalties = homePenalties ?? null
+        if (awayPenalties !== undefined) setFields.awayPenalties = awayPenalties ?? null
+        if (status !== undefined) setFields.status = status
         if (espnMatchId !== undefined) setFields.espnMatchId = espnMatchId
         const [updated] = await db.update(matches).set(setFields).where(eq(matches.id, matchId)).returning()
         return ok(res, updated)
