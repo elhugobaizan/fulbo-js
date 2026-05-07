@@ -24,6 +24,10 @@ function MatchCard({ slot, onEdit, compact = false }: { slot: BracketSlot; onEdi
   )
   const awayWon = isFinished && !homeWon
 
+  const dateStr = !isFinished && match?.scheduledAt
+    ? (() => { const [, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return { day: d, month: new Date(2000, m - 1, 1).toLocaleDateString('es-AR', { month: 'short' }) } })()
+    : null
+
   return (
     <button
       onClick={onEdit}
@@ -33,39 +37,51 @@ function MatchCard({ slot, onEdit, compact = false }: { slot: BracketSlot; onEdi
         ${isFinished ? 'border-gray-700 bg-gray-900/60' : 'border-dashed border-gray-700 bg-gray-900/30 hover:border-gray-500'}
       `}
     >
-      <div className={`flex items-center gap-1.5 px-2.5 py-2 ${homeWon ? 'bg-gray-700/60' : ''}`}>
-        {slot.homeTeam?.logoUrl
-          ? <img src={slot.homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
-          : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />
-        }
-        <span className={`text-xs flex-1 truncate ${homeWon ? 'text-white font-medium' : 'text-gray-300'}`}>
-          {slot.homeLabel}
-        </span>
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          {match?.homePenalties != null && (
-            <span className="text-[9px] text-yellow-400">({match.homePenalties})</span>
-          )}
-          <span className={`text-xs font-bold w-4 text-center ${homeWon ? 'text-white' : 'text-gray-500'}`}>
-            {isFinished ? match?.homeScore ?? 0 : ''}
-          </span>
-        </div>
-      </div>
-      <div className="h-px bg-gray-800" />
-      <div className={`flex items-center gap-1.5 px-2.5 py-2 ${awayWon ? 'bg-gray-700/60' : ''}`}>
-        {slot.awayTeam?.logoUrl
-          ? <img src={slot.awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
-          : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />
-        }
-        <span className={`text-xs flex-1 truncate ${awayWon ? 'text-white font-medium' : 'text-gray-300'}`}>
-          {slot.awayLabel}
-        </span>
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          {match?.awayPenalties != null && (
-            <span className="text-[9px] text-yellow-400">({match.awayPenalties})</span>
-          )}
-          <span className={`text-xs font-bold w-4 text-center ${awayWon ? 'text-white' : 'text-gray-500'}`}>
-            {isFinished ? match?.awayScore ?? 0 : ''}
-          </span>
+      <div className="flex items-stretch">
+        {/* Date column */}
+        {dateStr && (
+          <div className="flex flex-col items-center justify-center px-1.5 border-r border-gray-800 min-w-[28px]">
+            <span className="text-[9px] text-gray-500 capitalize leading-none">{dateStr.month}</span>
+            <span className="text-xs font-bold text-gray-400 leading-none mt-0.5">{dateStr.day}</span>
+          </div>
+        )}
+        {/* Teams column */}
+        <div className="flex-1 min-w-0">
+          <div className={`flex items-center gap-1.5 px-2.5 py-2 ${homeWon ? 'bg-gray-700/60' : ''}`}>
+            {slot.homeTeam?.logoUrl
+              ? <img src={slot.homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+              : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />
+            }
+            <span className={`text-xs flex-1 truncate ${homeWon ? 'text-white font-medium' : 'text-gray-300'}`}>
+              {slot.homeLabel}
+            </span>
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              {match?.homePenalties != null && (
+                <span className="text-[9px] text-yellow-400">({match.homePenalties})</span>
+              )}
+              <span className={`text-xs font-bold w-4 text-center ${homeWon ? 'text-white' : 'text-gray-500'}`}>
+                {isFinished ? match?.homeScore ?? 0 : ''}
+              </span>
+            </div>
+          </div>
+          <div className="h-px bg-gray-800" />
+          <div className={`flex items-center gap-1.5 px-2.5 py-2 ${awayWon ? 'bg-gray-700/60' : ''}`}>
+            {slot.awayTeam?.logoUrl
+              ? <img src={slot.awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+              : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />
+            }
+            <span className={`text-xs flex-1 truncate ${awayWon ? 'text-white font-medium' : 'text-gray-300'}`}>
+              {slot.awayLabel}
+            </span>
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              {match?.awayPenalties != null && (
+                <span className="text-[9px] text-yellow-400">({match.awayPenalties})</span>
+              )}
+              <span className={`text-xs font-bold w-4 text-center ${awayWon ? 'text-white' : 'text-gray-500'}`}>
+                {isFinished ? match?.awayScore ?? 0 : ''}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </button>
@@ -231,27 +247,25 @@ function DesktopBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: Brac
         </div>
 
         {/* Conectores octavos → cuartos */}
-        <div className="flex flex-col" style={{ width: 24 }}>
-          <div className="h-5" /> {/* espacio del header */}
+        <div className="flex flex-col" style={{ width: 24, rowGap: '6px' }}>
+          <div className="h-5" />
           {groups.map((_, i) => (
             <div key={i} className="flex flex-col" style={{ height: CARD_H * 2 + GAP * 2 + (i < groups.length - 1 ? 10 : 0) }}>
-              {/* línea superior: sale del medio del top card */}
               <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-                <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+                <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
               </div>
-              {/* línea vertical que los une */}
               <div style={{ width: '50%', height: CARD_H / 2 + GAP, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-              <div style={{ width: '50%', height: CARD_H / 2 + GAP, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-              {/* línea inferior: sale del medio del bot card */}
+              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)', alignSelf: 'flex-end' }} />
+              <div style={{ width: '50%', height: CARD_H / 2 + GAP - 1, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
               <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start' }}>
-                <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+                <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
               </div>
             </div>
           ))}
         </div>
 
         {/* Cuartos */}
-        <div className="flex flex-col" style={{ width: 164 }}>
+        <div className="flex flex-col" style={{ width: 164, rowGap: '6px' }}>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-center mb-1">Cuartos</p>
           {groups.map(({ qf: qfPos }, i) => (
             <div key={i} className="flex flex-col" style={{ height: CARD_H * 2 + GAP * 2 + (i < groups.length - 1 ? 10 : 0), justifyContent: 'center' }}>
@@ -261,32 +275,34 @@ function DesktopBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: Brac
         </div>
 
         {/* Conectores cuartos → semis */}
-        <div className="flex flex-col" style={{ width: 24 }}>
+        <div className="flex flex-col" style={{ width: 24, rowGap: '9px' }}>
           <div className="h-5" />
-          {/* Semi 1: agrupa cuartos 1 y 2 */}
           <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 2, display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-              <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
             </div>
-            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10), borderRight: '1px solid rgba(255,255,255,0.15)' }} />
+            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) / 2, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
+            <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)', alignSelf: 'flex-end' }} />
+            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) / 2 - 1, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
             <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start' }}>
-              <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
             </div>
           </div>
-          {/* Semi 2: agrupa cuartos 3 y 4 */}
           <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 2, display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-              <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
             </div>
-            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10), borderRight: '1px solid rgba(255,255,255,0.15)' }} />
+            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) / 2, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
+            <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)', alignSelf: 'flex-end' }} />
+            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) / 2 - 1, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
             <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start' }}>
-              <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
             </div>
           </div>
         </div>
 
         {/* Semis */}
-        <div className="flex flex-col" style={{ width: 164 }}>
+        <div className="flex flex-col" style={{ width: 164, rowGap: '9px' }}>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-center mb-1">Semifinal</p>
           {/* Semi 1 centrada entre cuartos 1 y 2 */}
           <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 2, display: 'flex', alignItems: 'center' }}>
@@ -299,21 +315,23 @@ function DesktopBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: Brac
         </div>
 
         {/* Conector semis → final */}
-        <div className="flex flex-col" style={{ width: 24 }}>
+        <div className="flex flex-col" style={{ width: 24, rowGap: '11px' }}>
           <div className="h-5" />
           <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 4, display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-              <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
             </div>
-            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) * 2, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
+            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10), borderRight: '1px solid rgba(255,255,255,0.15)' }} />
+            <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)', alignSelf: 'flex-end' }} />
+            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) - 1, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
             <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start' }}>
-              <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
             </div>
           </div>
         </div>
 
         {/* Final */}
-        <div className="flex flex-col" style={{ width: 164 }}>
+        <div className="flex flex-col" style={{ width: 164, rowGap: '11px' }}>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-center mb-1">Final</p>
           <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 4, display: 'flex', alignItems: 'center' }}>
             {finm ? <MatchCard slot={finm} onEdit={() => onEdit(finm)} compact /> : (

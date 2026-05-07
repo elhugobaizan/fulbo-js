@@ -30,11 +30,7 @@ function formatTimeAgo(dateStr: string): string {
 }
 
 function formatDate(dateStr: string): string {
-  // Tomar solo la parte de fecha para evitar conversión de timezone
-  const datePart = dateStr.split('T')[0]
-  const [year, month, day] = datePart.split('-').map(Number)
-  const date = new Date(year, month - 1, day) // fecha local, sin UTC
-  return date.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })
+  return new Date(dateStr).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
 // ─── Live Banner ─────────────────────────────────────────────────────────────
@@ -94,7 +90,7 @@ function TeamFixturesCard({ fav }: { fav: any }) {
       {/* Fixtures */}
       {isLoading ? (
         <div className="px-4 py-3 space-y-2 animate-pulse">
-          {[1, 2, 3].map(i => <div key={i} className="h-4 bg-gray-800 rounded" />)}
+          {[1,2,3].map(i => <div key={i} className="h-4 bg-gray-800 rounded" />)}
         </div>
       ) : fixtures.length === 0 ? (
         <p className="px-4 py-3 text-xs text-gray-600">Sin próximos partidos</p>
@@ -238,9 +234,7 @@ function HomePage() {
             <Calendar size={14} className="text-[#74ACDF]" />
             <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Mis equipos</h2>
           </div>
-          <Link to="/favorites" className="flex items-center gap-1 text-xs text-[#74ACDF] hover:underline">
-            Ver todos <ChevronRight size={12} />
-          </Link>
+
         </div>
         <FavoritesSection />
       </section>

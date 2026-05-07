@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Lock, Plus, Check, X, Trophy, Trash2 } from 'lucide-react'
+import { Lock, Plus, Check, X, Trophy, Trash2, Calendar } from 'lucide-react'
 import { MatchEventsPanel } from '../components/MatchEventsPanel'
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
@@ -48,6 +48,27 @@ async function fetchAllTournaments(token: string) {
     headers: { 'x-admin-token': token },
   })
   return data.data ?? []
+}
+
+async function generateKnockout(token: string, tournamentId: number) {
+  const { data } = await apiClient.post('/admin?action=generate-knockout',
+    { tournamentId }, { headers: { 'x-admin-token': token } }
+  )
+  return data.data
+}
+
+async function fetchKnockoutMatches(tournamentId: number) {
+  const { data } = await apiClient.get('/local', {
+    params: { resource: 'knockout-fixtures', tournamentId },
+  })
+  return data.data ?? []
+}
+
+async function setMatchDate(token: string, matchId: number, scheduledAt: string | null) {
+  const { data } = await apiClient.patch('/admin?action=set-match-date',
+    { matchId, scheduledAt }, { headers: { 'x-admin-token': token } }
+  )
+  return data.data
 }
 
 async function activateTournament(token: string, tournamentId: number) {
@@ -596,6 +617,127 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
   )
 }
 
+
+// ─── Knockout Section ─────────────────────────────────────────────────────────
+
+const ROUND_LABELS: Record<string, string> = {
+  round_of_16: 'Octavos de Final',
+  quarterfinal: 'Cuartos de Final',
+  semifinal: 'Semifinales',
+  final: 'Final',
+}
+
+function KnockoutSection({ token, tournamentId, tournament }: { token: string; tournamentId: number; tournament: any }) {
+  const queryClient = useQueryClient()
+  const [editingDate, setEditingDate] = useState<number | null>(null)
+  const [dateValue, setDateValue] = useState('')
+
+  const { data: knockoutMatches = [], isLoading } = useQuery({
+    queryKey: ['knockout-matches', tournamentId],
+    queryFn: () => fetchKnockoutMatches(tournamentId),
+  })
+
+  const generateMutation = useMutation<any, Error, void>({
+    mutationFn: () => generateKnockout(token, tournamentId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['knockout-matches', tournamentId] }),
+  })
+
+  const dateMutation = useMutation<any, Error, { matchId: number; scheduledAt: string | null }>({
+    mutationFn: ({ matchId, scheduledAt }) => setMatchDate(token, matchId, scheduledAt),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knockout-matches', tournamentId] })
+      setEditingDate(null)
+    },
+  })
+
+  const knockoutStarted = (tournament as any)?.knockoutStarted
+
+  // Group by round
+  const byRound = (knockoutMatches as any[]).reduce((acc: Record<string, any[]>, m: any) => {
+    const r = m.knockoutRound ?? 'unknown'
+    if (!acc[r]) acc[r] = []
+    acc[r].push(m)
+    return acc
+  }, {})
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Fase Eliminatoria</h2>
+        {knockoutMatches.length === 0 && knockoutStarted && (
+          <button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#74ACDF] text-gray-950 font-medium text-sm disabled:opacity-50 transition-colors">
+            <Trophy size={13} /> {generateMutation.isPending ? 'Generando...' : 'Generar Octavos'}
+          </button>
+        )}
+        {!knockoutStarted && (
+          <span className="text-xs text-gray-600">Activá la fase eliminatoria en Neon para generar los partidos</span>
+        )}
+      </div>
+
+      {generateMutation.isError && (
+        <p className="text-red-400 text-xs">{(generateMutation.error as any)?.response?.data?.error ?? 'Error al generar'}</p>
+      )}
+
+      {isLoading && <p className="text-gray-500 text-sm">Cargando...</p>}
+
+      {knockoutMatches.length === 0 && !isLoading && knockoutStarted && (
+        <div className="rounded-xl border border-dashed border-gray-700 p-8 text-center">
+          <p className="text-gray-400 text-sm">No hay partidos de eliminatoria generados todavía</p>
+        </div>
+      )}
+
+      {Object.entries(byRound).map(([round, roundMatches]) => (
+        <div key={round} className="space-y-2">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{ROUND_LABELS[round] ?? round}</h3>
+          {(roundMatches as any[]).map((match: any) => (
+            <div key={match.id} className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-3 space-y-2">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-white flex-1 text-right truncate font-medium">
+                  {match.homeTeam?.shortName ?? match.homeTeam?.name ?? '?'}
+                </span>
+                <span className={`text-sm font-bold w-16 text-center ${match.status === 'finished' ? 'text-white' : 'text-gray-600'}`}>
+                  {match.status === 'finished' ? `${match.homeScore} - ${match.awayScore}` : 'vs'}
+                </span>
+                <span className="text-sm text-white flex-1 truncate font-medium">
+                  {match.awayTeam?.shortName ?? match.awayTeam?.name ?? '?'}
+                </span>
+              </div>
+              {editingDate === match.id ? (
+                <div className="flex gap-2">
+                  <input type="datetime-local" value={dateValue} onChange={e => setDateValue(e.target.value)}
+                    className="flex-1 px-2 py-1 rounded-lg bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]" />
+                  <button onClick={() => dateMutation.mutate({ matchId: match.id, scheduledAt: dateValue ? dateValue + ':00.000Z' : null })}
+                    disabled={dateMutation.isPending}
+                    className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs disabled:opacity-50">
+                    <Check size={12} />
+                  </button>
+                  <button onClick={() => setEditingDate(null)}
+                    className="px-3 py-1 rounded-lg bg-gray-700 text-gray-300 text-xs">
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">
+                    {match.scheduledAt
+                      ? (() => { const [y, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' }) })()
+                      : 'Sin fecha'}
+                  </span>
+                  <button onClick={() => { setEditingDate(match.id); setDateValue(match.scheduledAt?.slice(0, 16) ?? '') }}
+                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#74ACDF] transition-colors">
+                    <Calendar size={11} /> Editar fecha
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
 function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void }) {
@@ -702,12 +844,12 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void }
       )}
 
       {activeTab === 'bracket' && (
-        <section className="space-y-4">
-          <h2 className="text-lg font-bold text-white border-b border-gray-800 pb-2">Reglas de Eliminatoria</h2>
-          <p className="text-sm text-gray-400">
-            Configurá los cruces de cada ronda. El sistema resuelve los equipos automáticamente según los standings.
-          </p>
-          <BracketRulesSection token={token} groups={groupsData ?? []} tournamentId={tournamentId} />
+        <section className="space-y-6">
+          <KnockoutSection token={token} tournamentId={tournamentId} tournament={tournament} />
+          <div className="border-t border-gray-800 pt-4 space-y-4">
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Reglas de cruces</h2>
+            <BracketRulesSection token={token} groups={groupsData ?? []} tournamentId={tournamentId} />
+          </div>
         </section>
       )}
     </div>

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents, matchLineups } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
 
@@ -259,6 +259,112 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         )
       }
       return ok(res, { matchId, teamId, count: players.length })
+    }
+
+    // activate knockout phase
+    if (action === 'activate-knockout' && req.method === 'POST') {
+      const { tournamentId } = req.body
+      if (!tournamentId) return err(res, 'tournamentId required', 400)
+      await db.update(tournaments).set({ knockoutStarted: true } as any).where(eq(tournaments.id, Number(tournamentId)))
+      return ok(res, { activated: true })
+    }
+
+    // update knockout match date
+    if (action === 'set-match-date' && req.method === 'PATCH') {
+      const { matchId, scheduledAt } = req.body
+      if (!matchId) return err(res, 'matchId required', 400)
+      const [updated] = await db.update(matches)
+        .set({ scheduledAt: scheduledAt ? new Date(scheduledAt) : null, updatedAt: new Date() } as any)
+        .where(eq(matches.id, Number(matchId)))
+        .returning()
+      return ok(res, updated)
+    }
+
+    // generate knockout matches from bracket rules + standings
+    if (action === 'generate-knockout' && req.method === 'POST') {
+      const { tournamentId } = req.body
+      if (!tournamentId) return err(res, 'tournamentId required', 400)
+      const tid = Number(tournamentId)
+
+      // Check if matches already exist
+      const existing = await db.select().from(matches).where(
+        and(eq(matches.tournamentId, tid), eq(matches.phase, 'knockout'))
+      )
+      if (existing.length > 0) return err(res, 'Knockout matches already generated', 400)
+
+      // Get bracket rules for round_of_16
+      const rules = await db.select().from(bracketRules).where(
+        and(eq(bracketRules.tournamentId, tid), eq(bracketRules.knockoutRound as any, 'round_of_16'))
+      )
+
+      // Get groups with teams
+      const groupsData = await db.select().from(groups).where(eq(groups.tournamentId, tid))
+      const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
+        const members = await db.select({ teamId: groupTeams.teamId, team: teams })
+          .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id))
+          .where(eq(groupTeams.groupId, group.id))
+        return { ...group, members }
+      }))
+
+      // Get all finished group matches
+      const allGroupMatches = await db.select().from(matches).where(
+        and(eq(matches.tournamentId, tid), eq(matches.phase, 'group'))
+      )
+
+      // Calculate standings per group
+      const standingsByGroup: Record<number, any[]> = {}
+      for (const group of groupsWithTeams) {
+        const gTeamIds = new Set(group.members.map((m: any) => m.teamId))
+        const relevant = allGroupMatches.filter((m: any) =>
+          m.status === 'finished' && (gTeamIds.has(m.homeTeamId) || gTeamIds.has(m.awayTeamId))
+        )
+        const stats: Record<number, any> = {}
+        for (const gt of group.members) {
+          stats[gt.teamId] = { teamId: gt.teamId, team: gt.team, played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, points: 0 }
+        }
+        for (const m of relevant) {
+          const hg = m.homeScore ?? 0, ag = m.awayScore ?? 0
+          if (m.homeTeamId && gTeamIds.has(m.homeTeamId)) {
+            const h = stats[m.homeTeamId]; h.played++; h.goalsFor += hg; h.goalsAgainst += ag
+            if (hg > ag) { h.won++; h.points += 3 } else if (hg < ag) h.lost++; else { h.drawn++; h.points++ }
+          }
+          if (m.awayTeamId && gTeamIds.has(m.awayTeamId)) {
+            const a = stats[m.awayTeamId]; a.played++; a.goalsFor += ag; a.goalsAgainst += hg
+            if (ag > hg) { a.won++; a.points += 3 } else if (ag < hg) a.lost++; else { a.drawn++; a.points++ }
+          }
+        }
+        standingsByGroup[group.id] = Object.values(stats).sort((a: any, b: any) => {
+          if (b.points !== a.points) return b.points - a.points
+          const da = a.goalsFor - a.goalsAgainst, db2 = b.goalsFor - b.goalsAgainst
+          if (db2 !== da) return db2 - da
+          return b.goalsFor - a.goalsFor
+        })
+      }
+
+      // Create matches from rules
+      const created = []
+      for (const rule of rules.sort((a, b) => a.bracketPosition - b.bracketPosition)) {
+        const homeTeam = rule.homeGroupId !== null && rule.homePosition !== null
+          ? standingsByGroup[rule.homeGroupId]?.[rule.homePosition - 1]?.team ?? null
+          : null
+        const awayTeam = rule.awayGroupId !== null && rule.awayPosition !== null
+          ? standingsByGroup[rule.awayGroupId]?.[rule.awayPosition - 1]?.team ?? null
+          : null
+
+        const [match] = await db.insert(matches).values({
+          tournamentId: tid,
+          phase: 'knockout',
+          knockoutRound: 'round_of_16',
+          bracketPosition: rule.bracketPosition,
+          homeTeamId: homeTeam?.id ?? null,
+          awayTeamId: awayTeam?.id ?? null,
+          status: 'scheduled',
+          scheduledAt: null,
+        } as any).returning()
+        created.push(match)
+      }
+
+      return ok(res, { created: created.length })
     }
 
     return err(res, 'Unknown action', 400)

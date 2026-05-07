@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Home, Calendar, LayoutList, Users, Star, Trophy } from 'lucide-react'
+import { Home, Calendar, LayoutList, Users, Trophy } from 'lucide-react'
 
 const navLinks = [
   { to: '/', label: 'Inicio', icon: Home, exact: true },
@@ -7,7 +7,6 @@ const navLinks = [
   { to: '/standings', label: 'Posiciones', icon: LayoutList, exact: false },
   { to: '/bracket', label: 'Eliminatoria', icon: Trophy, exact: false },
   { to: '/players', label: 'Estadisticas', icon: Users, exact: false },
-  { to: '/favorites', label: 'Favoritos', icon: Star, exact: false },
 ]
 
 function Logo() {

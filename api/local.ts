@@ -110,7 +110,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!teamId) return err(res, 'teamId required', 400)
       const limit = Number(req.query.limit) || 3
 
-      const allMatches = await db.select().from(matches).where(eq(matches.phase, 'group'))
+      const allMatches = await db.select().from(matches)
 
       const all = req.query.all === 'true'
       const teamMatches = allMatches
@@ -438,6 +438,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       return ok(res, { played, started, subIn, goals, assists, yellowCards, redCards, minutesPlayed, penaltySaves })
+    }
+
+    // knockout matches
+    if (resource === 'knockout-fixtures') {
+      const round = req.query.round as string | undefined
+      const knockoutMatches = await db.select().from(matches)
+        .where(and(
+          eq(matches.tournamentId, tournamentId),
+          eq(matches.phase, 'knockout'),
+          ...(round ? [eq(matches.knockoutRound as any, round)] : [])
+        ))
+        .orderBy(matches.knockoutRound, matches.bracketPosition)
+
+      if (knockoutMatches.length === 0) return ok(res, [])
+
+      const teamIds = [...new Set(knockoutMatches.flatMap((m: any) =>
+        [m.homeTeamId, m.awayTeamId].filter(Boolean)
+      ))] as number[]
+      const teamsData = teamIds.length > 0 ? await db.select().from(teams).where(inArray(teams.id, teamIds)) : []
+      const teamById = Object.fromEntries(teamsData.map((t: any) => [t.id, t]))
+
+      const enriched = knockoutMatches.map((m: any) => ({
+        ...m,
+        homeTeam: m.homeTeamId ? teamById[m.homeTeamId] : null,
+        awayTeam: m.awayTeamId ? teamById[m.awayTeamId] : null,
+      }))
+      return ok(res, enriched)
     }
 
     return err(res, 'Unknown resource', 400)
