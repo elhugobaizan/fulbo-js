@@ -176,7 +176,7 @@ function TeamPage() {
   const { data: teamTournaments = [] } = useTeamTournaments(local ? numericId : 0)
   const [showAddPlayer, setShowAddPlayer] = useState(false)
   const [selectedLocalPlayer, setSelectedLocalPlayer] = useState<any>(null)
-  const [activeTab, setActiveTab] = useState<'squad' | 'fixtures'>('squad')
+  const [activeTab, setActiveTab] = useState<'squad' | 'fixtures'>('fixtures')
   const { data: teamFixtures = [] } = useTeamFixtures(numericId, 20, true)
 
   const handleToggleFavorite = () => {
@@ -238,13 +238,13 @@ function TeamPage() {
       {/* Tab toggle - only for local teams */}
       {local && (
         <div className="flex gap-1 bg-gray-900 p-1 rounded-xl border border-gray-800 w-fit">
-          <button onClick={() => setActiveTab('squad')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'squad' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-            <Users size={13} /> Plantel
-          </button>
           <button onClick={() => setActiveTab('fixtures')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'fixtures' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
             <Calendar size={13} /> Partidos
+          </button>
+          <button onClick={() => setActiveTab('squad')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'squad' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+            <Users size={13} /> Plantel
           </button>
         </div>
       )}

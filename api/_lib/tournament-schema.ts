@@ -37,6 +37,7 @@ export const tournaments = pgTable('tournaments', {
   createdAt: timestamp('created_at').defaultNow(),
   qualifiersPerGroup: integer('qualifiers_per_group').notNull().default(8),
   allowCrossGroup: boolean('allow_cross_group').default(false).notNull(),
+  knockoutStarted: boolean('knockout_started').default(false).notNull(),
 })
 
 // ─── Teams ───────────────────────────────────────────────────────────────────
