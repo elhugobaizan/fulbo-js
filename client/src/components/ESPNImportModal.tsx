@@ -89,7 +89,7 @@ function parseEvents(data: any, espnHomeId: string, espnAwayId: string, homeTeam
       events.push({ type: 'save', minute, teamId: savingTeamId, playerName: goalkeeper?.name ?? null })
       continue
     }
-    const isGoalType = type === 'goal' || type.startsWith('goal') || type === 'penalty' || type.startsWith('penalty') || type === 'own-goal'
+    const isGoalType = type === 'goal' || type.startsWith('goal') || type === 'penalty' || (type.startsWith('penalty') && !(type.includes('saved') || type.includes('missed'))) || type === 'own-goal'
     const isPenalty = type === 'penalty' || text.toLowerCase().includes('penalty') || text.toLowerCase().includes('penal')
     const isOwnGoal = text.toLowerCase().includes('own goal') || text.toLowerCase().includes('en contra') || type === 'own-goal'
 
