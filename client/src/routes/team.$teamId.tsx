@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, Star, Users, UserPlus } from 'lucide-react'
+import { ArrowLeft, Users, UserPlus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import { apiClient } from '../lib/api'
@@ -34,18 +34,9 @@ function isLocalTeam(leagueId?: number) {
   return leagueId !== undefined && leagueId <= LOCAL_LEAGUE_THRESHOLD
 }
 
-interface TeamInfo {
-  team: { id: number; name: string; logo: string; country: string; founded: number }
-  venue: { name: string; city: string; capacity: number }
-}
 
 interface LocalTeam {
   id: number; name: string; shortName: string | null; logoUrl: string | null; country: string | null
-}
-
-async function fetchTeamInfo(teamId: number): Promise<TeamInfo | null> {
-  const { data } = await apiClient.get('/football', { params: { resource: 'team-info', teamId } })
-  return data.data?.[0] ?? null
 }
 
 async function fetchLocalTeam(teamId: number): Promise<LocalTeam | null> {
@@ -183,14 +174,6 @@ function TeamPage() {
   const local = isLocalTeam(leagueId)
   const fav = isFavorite(numericId)
 
-  // API externa
-  const { data: teamInfo, isLoading: loadingInfo } = useQuery({
-    queryKey: ['team-info', numericId],
-    queryFn: () => fetchTeamInfo(numericId),
-    staleTime: 1000 * 60 * 60,
-    enabled: !local,
-  })
-
   // Torneo local
   const { data: localTeam, isLoading: loadingLocal } = useQuery({
     queryKey: ['local-team', numericId],
@@ -212,8 +195,6 @@ function TeamPage() {
   const handleToggleFavorite = () => {
     if (local && localTeam) {
       toggle({ teamId: numericId, teamName: localTeam.name, teamLogo: localTeam.logoUrl ?? '', leagueId: leagueId ?? 0, leagueName: leagueName ?? '' })
-    } else if (teamInfo) {
-      toggle({ teamId: numericId, teamName: teamInfo.team.name, teamLogo: teamInfo.team.logo, leagueId: leagueId ?? 0, leagueName: leagueName ?? 'Sin liga' })
     }
   }
 
@@ -226,7 +207,7 @@ function TeamPage() {
       </button>
 
       {/* Header */}
-      {(local ? loadingLocal : loadingInfo) ? (
+      {(loadingLocal) ? (
         <TeamHeaderSkeleton />
       ) : local && localTeam ? (
         <TeamHeader
@@ -234,23 +215,6 @@ function TeamPage() {
           onToggleFav={handleToggleFavorite} isFav={fav}
           tournaments={teamTournaments}
         />
-      ) : !local && teamInfo ? (
-        <div className="flex items-center gap-4 p-5 rounded-xl border border-gray-800 bg-gray-900/40">
-          <img src={teamInfo.team.logo} alt={teamInfo.team.name} className="w-20 h-20 object-contain flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold text-white">{teamInfo.team.name}</h1>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-sm text-gray-400">
-              {teamInfo.team.founded && <span>Fundado: {teamInfo.team.founded}</span>}
-              {teamInfo.venue?.name && <span>🏟 {teamInfo.venue.name}</span>}
-              {teamInfo.venue?.capacity && <span>{teamInfo.venue.capacity.toLocaleString()} cap.</span>}
-            </div>
-            {leagueName && <p className="text-xs text-[#74ACDF] mt-1">{leagueName}</p>}
-          </div>
-          <button onClick={handleToggleFavorite}
-            className="p-2.5 rounded-xl border border-gray-700 hover:border-yellow-400/50 transition-colors flex-shrink-0">
-            <Star size={18} className={fav ? 'text-yellow-400 fill-yellow-400' : 'text-gray-500'} />
-          </button>
-        </div>
       ) : null}
 
       {/* Tab toggle - only for local teams */}
