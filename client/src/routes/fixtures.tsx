@@ -23,9 +23,33 @@ const ROUND_LABELS: Record<string, string> = {
 }
 const FIXTURES_MATCHDAY_KEY = 'futbol-ar:fixtures-matchday'
 
-function formatMatchDate(dateStr: string): string {
+function getDateKey(dateStr?: string | null) {
+  if (!dateStr) return 'sin-fecha'
+
+  return dateStr.split('T')[0]
+}
+
+function formatDateGroup(dateStr?: string | null) {
+  if (!dateStr) return 'Sin fecha'
+
   const [y, m, d] = dateStr.split('T')[0].split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })
+
+  return new Date(y, m - 1, d).toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
+}
+
+function groupMatchesByDate(matches: any[]) {
+  return matches.reduce<Record<string, any[]>>((acc, match) => {
+    const key = getDateKey(match.scheduledAt)
+
+    if (!acc[key]) acc[key] = []
+    acc[key].push(match)
+
+    return acc
+  }, {})
 }
 
 // ─── Result Modal ─────────────────────────────────────────────────────────────
@@ -141,59 +165,6 @@ function ResultModal({ match, onClose }: { match: any; onClose: () => void }) {
 }
 
 // ─── Local fixture card ───────────────────────────────────────────────────────
-
-/* function LocalFixtureCard({ match }: { match: any }) {
-  const [editing, setEditing] = useState(false)
-  const navigate = useNavigate()
-  const isFinished = match.status === 'finished'
-  const isPast = match.scheduledAt && new Date(match.scheduledAt) < new Date()
-  const homeWon = isFinished && (match.homeScore ?? 0) > (match.awayScore ?? 0)
-  const awayWon = isFinished && (match.awayScore ?? 0) > (match.homeScore ?? 0)
-  const canEdit = isFinished || isPast
-
-  const handleClick = () => {
-    if (isFinished) navigate({ to: '/match/$matchId', params: { matchId: String(match.id) } })
-    else if (isPast) setEditing(true)
-  }
-
-  return (
-    <>
-      <div onClick={() => canEdit && handleClick()}
-        className={`rounded-xl border px-4 py-3 transition-colors ${isFinished ? 'border-gray-800 bg-gray-900/40' : 'border-dashed border-gray-700 bg-gray-900/20'} ${canEdit ? 'cursor-pointer hover:bg-gray-800/40' : ''}`}>
-        {match.scheduledAt && (
-          <p className="text-[11px] text-gray-500 text-center mb-2 capitalize">{formatMatchDate(match.scheduledAt)}</p>
-        )}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 flex-1 justify-end">
-            <span className={`text-sm truncate font-medium ${homeWon ? 'text-white' : 'text-gray-300'}`}>{match.homeTeam?.shortName ?? match.homeTeam?.name ?? '?'}</span>
-            <TeamBadge name={match.homeTeam?.name ?? '?'} logo={match.homeTeam?.logoUrl} size={22} />
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {isFinished ? (
-              <>
-                <span className={`text-lg font-bold w-6 text-center ${homeWon ? 'text-white' : 'text-gray-400'}`}>{match.homeScore}</span>
-                <span className="text-gray-600">-</span>
-                <span className={`text-lg font-bold w-6 text-center ${awayWon ? 'text-white' : 'text-gray-400'}`}>{match.awayScore}</span>
-                {match.homePenalties !== null && <span className="text-xs text-yellow-400 ml-1">({match.homePenalties}-{match.awayPenalties} pen.)</span>}
-              </>
-            ) : (
-              <span className="text-sm text-gray-600 px-2">{isPast ? '– vs –' : 'vs'}</span>
-            )}
-            {isFinished && (
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${match.eventCount > 0 ? 'bg-emerald-500' : 'bg-gray-600'}`} title={match.eventCount > 0 ? `${match.eventCount} incidencias` : 'Sin incidencias'} />
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 flex-1">
-            <TeamBadge name={match.awayTeam?.name ?? '?'} logo={match.awayTeam?.logoUrl} size={22} />
-            <span className={`text-sm truncate font-medium ${awayWon ? 'text-white' : 'text-gray-300'}`}>{match.awayTeam?.shortName ?? match.awayTeam?.name ?? '?'}</span>
-          </div>
-        </div>
-      </div>
-      {editing && <ResultModal match={match} onClose={() => setEditing(false)} />}
-    </>
-  )
-} */
-
 function LocalFixtureCard({ match }: { match: any }) {
   const [editing, setEditing] = useState(false)
   const navigate = useNavigate()
@@ -217,19 +188,13 @@ function LocalFixtureCard({ match }: { match: any }) {
       <div
         onClick={() => canEdit && handleClick()}
         className={[
-          'group rounded-2xl border px-4 py-3 transition-all duration-150',
+          'group rounded-2xl border px-4 py-3 transition-all duration-150 relative',
           isFinished
             ? 'border-white/[0.05] bg-white/[0.025] hover:border-white/[0.08] hover:bg-white/[0.045]'
             : 'border-dashed border-white/[0.08] bg-white/[0.015]',
           canEdit ? 'cursor-pointer' : '',
         ].join(' ')}
       >
-        {match.scheduledAt && (
-          <p className="mb-2 text-center text-[11px] font-medium capitalize text-slate-600">
-            {formatMatchDate(match.scheduledAt)}
-          </p>
-        )}
-
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
           <div className="flex min-w-0 items-center justify-end gap-2">
             <span
@@ -303,17 +268,14 @@ function LocalFixtureCard({ match }: { match: any }) {
         </div>
 
         {isFinished && (
-          <div className="mt-2 flex justify-center">
+          <div className="absolute right-3 top-3">
             <span
               className={[
-                'h-1.5 w-1.5 rounded-full',
-                match.eventCount > 0 ? 'bg-emerald-400' : 'bg-slate-700',
-              ].join(' ')}
-              title={
+                'block h-1.5 w-1.5 rounded-full opacity-40 hover:opacity-100',
                 match.eventCount > 0
-                  ? `${match.eventCount} incidencias`
-                  : 'Sin incidencias'
-              }
+                  ? 'bg-emerald-400/80'
+                  : 'bg-slate-700',
+              ].join(' ')}
             />
           </div>
         )}
@@ -358,6 +320,15 @@ function FixturesPage() {
   const matchdays = localData?.matchdays ?? []
   const hasKnockout = knockoutMatches.length > 0
 
+  const groupedMatches = groupMatchesByDate(localData?.matches || [])
+  const dateGroups = Object.entries(groupedMatches)
+
+  const currentIndex = matchdays.findIndex(
+    (matchday) => matchday === selectedMatchday,
+  )
+
+  const previousMatchday = matchdays[currentIndex - 1]
+  const nextMatchday = matchdays[currentIndex + 1]
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-white">Fixtures</h1>
@@ -366,53 +337,75 @@ function FixturesPage() {
       {!loadingLocal && localData && (
         <>
           {(matchdays.length > 0 || hasKnockout) && currentMatchday && (
-            <div className="space-y-2">
+            <div className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-4">
               {/* Arrow selector */}
-              <div className="flex items-center gap-2 bg-gray-900 rounded-xl px-3 py-2 border border-gray-800">
-                <button onClick={() => {
-                  if (isKnockout) handleMatchdayChange(matchdays[matchdays.length - 1])
-                  else { const idx = matchdays.indexOf(currentMatchday as number); if (idx > 0) handleMatchdayChange(matchdays[idx - 1]) }
-                }}
-                  disabled={!isKnockout && matchdays.indexOf(currentMatchday as number) <= 0}
-                  className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white disabled:opacity-30 transition-colors">
-                  <ChevronLeft size={18} />
-                </button>
-                <div className="flex-1 flex items-center justify-center gap-2">
-                  <span className="text-sm font-medium text-white">
-                    {isKnockout ? 'Eliminatoria' : `Fecha ${currentMatchday}`}
-                  </span>
-                  {!isKnockout && <span className="text-sm text-gray-500">({matchdays.indexOf(currentMatchday as number) + 1}/{matchdays.length + (hasKnockout ? 1 : 0)})</span>}
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Fecha seleccionada
+                  </p>
+                  <h2 className="mt-1 text-xl font-bold tracking-tight text-white">
+                    Fecha {selectedMatchday}
+                    <span className="ml-2 text-sm font-medium text-slate-500">
+                      de {matchdays.length}
+                    </span>
+                  </h2>
                 </div>
-                <button onClick={() => {
-                  if (!isKnockout) {
-                    const idx = matchdays.indexOf(currentMatchday as number)
-                    if (idx < matchdays.length - 1) handleMatchdayChange(matchdays[idx + 1])
-                    else if (hasKnockout) handleMatchdayChange(KNOCKOUT_KEY)
-                  }
-                }}
-                  disabled={isKnockout || (!hasKnockout && matchdays.indexOf(currentMatchday as number) >= matchdays.length - 1)}
-                  className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white disabled:opacity-30 transition-colors">
-                  <ChevronRight size={18} />
-                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (previousMatchday !== undefined) {
+                        setSelectedMatchday(previousMatchday)
+                      }
+                    }}
+                    disabled={currentIndex <= 0}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-slate-400 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronLeft />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (nextMatchday !== undefined) {
+                        setSelectedMatchday(nextMatchday)
+                      }
+                    }}
+                    disabled={currentIndex === -1 || currentIndex >= matchdays.length - 1}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-slate-400 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronRight />
+                  </button>
+                </div>
               </div>
 
               {/* Pills */}
-              <div className="flex gap-1.5 flex-wrap">
-                {matchdays.map(day => {
-                  const isActive = currentMatchday === day
-                  const allHaveEvents = isActive && localData && localData.matches.length > 0 &&
-                    localData.matches.every((m: any) => (m.eventCount ?? 0) > 0)
+              <div className="flex flex-wrap gap-2">
+                {matchdays.map((matchday) => {
+                  const active = selectedMatchday === matchday
+
                   return (
-                    <button key={day} onClick={() => handleMatchdayChange(day)}
-                      className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${isActive ? 'bg-[#74ACDF] text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
-                      {day}
-                      {allHaveEvents && <Check size={10} />}
+                    <button
+                      key={matchday}
+                      onClick={() => setSelectedMatchday(matchday)}
+                      className={[
+                        'h-10 min-w-10 rounded-xl px-3 text-sm font-semibold transition-all duration-150',
+                        active
+                          ? 'border border-white/[0.08] bg-white/[0.09] text-white shadow-[0_0_24px_rgba(255,255,255,0.04)]'
+                          : 'border border-white/[0.04] bg-white/[0.025] text-slate-500 hover:border-white/[0.08] hover:bg-white/[0.05] hover:text-slate-300',
+                      ].join(' ')}
+                    >
+                      {matchday}
                     </button>
                   )
                 })}
                 {hasKnockout && (
                   <button onClick={() => handleMatchdayChange(KNOCKOUT_KEY)}
-                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${isKnockout ? 'bg-[#74ACDF] text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                    className={[
+                      'h-10 min-w-10 rounded-xl px-3 text-sm font-semibold transition-all duration-150',
+                      'border border-white/[0.04] bg-white/[0.025] text-slate-500 hover:border-white/[0.08] hover:bg-white/[0.05] hover:text-slate-300',
+                    ].join(' ')}
+                  >
                     Eliminatoria
                   </button>
                 )}
@@ -426,9 +419,23 @@ function FixturesPage() {
               <p className="text-gray-400">No hay partidos para esta fecha</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {localData.matches.map((match) => (
-                <LocalFixtureCard key={match.id} match={match} />
+            <div className="space-y-6">
+              {dateGroups.map(([dateKey, dateMatches]) => (
+                <section key={dateKey}>
+                  <div className="mb-2.5 flex items-center gap-3">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      {formatDateGroup(dateMatches[0]?.scheduledAt)}
+                    </h3>
+
+                    <div className="h-px flex-1 bg-white/[0.06]" />
+                  </div>
+
+                  <div className="space-y-2">
+                    {dateMatches.map((match) => (
+                      <LocalFixtureCard key={match.id} match={match} />
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           ))}

@@ -72,7 +72,7 @@ export function TeamHeader({ team, onToggleFav, isFav, tournaments }: {
           background: `
       radial-gradient(
         circle at 12% 20%,
-        #${team.alternateColor || '74ACDF'}18,
+        #${team.color || '74ACDF'}18,
         transparent 58%
       ),
       linear-gradient(
