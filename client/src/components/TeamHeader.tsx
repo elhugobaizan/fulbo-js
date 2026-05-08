@@ -4,7 +4,14 @@ import { Star } from 'lucide-react'
 import { useLocalStandings } from '../hooks/useLocalStandings';
 
 interface LocalTeam {
-  id: number; name: string; shortName: string | null; logoUrl: string | null; country: string | null
+  id: number;
+  name: string;
+  shortName: string | null;
+  logoUrl: string | null;
+  country: string | null;
+  externalId: number | null;
+  color: string | null;
+  alternateColor: string | null;
 }
 
 function TournamentPills({ tournaments, teamId }: { tournaments?: any[], teamId: number }) {
@@ -59,8 +66,23 @@ export function TeamHeader({ team, onToggleFav, isFav, tournaments }: {
 
   return (
     <section className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-slate-900/60 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_20%,rgba(116,172,223,0.18),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(2,8,23,0.98))]" />
-      <div className="absolute -left-16 -top-20 h-56 w-56 rounded-full bg-[#74ACDF]/10 blur-3xl" />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `
+      radial-gradient(
+        circle at 12% 20%,
+        #${team.alternateColor || '74ACDF'}18,
+        transparent 58%
+      ),
+      linear-gradient(
+        135deg,
+        rgba(15,23,42,0.96),
+        rgba(2,8,23,0.98)
+      )
+    `,
+        }}
+      />      <div className="absolute -left-16 -top-20 h-56 w-56 rounded-full bg-[#74ACDF]/10 blur-3xl" />
 
       <div className="relative flex items-center gap-6 p-7">
         <div className="flex h-28 w-28 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] shadow-[0_0_40px_rgba(116,172,223,0.12)]">

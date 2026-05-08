@@ -142,7 +142,7 @@ function ResultModal({ match, onClose }: { match: any; onClose: () => void }) {
 
 // ─── Local fixture card ───────────────────────────────────────────────────────
 
-function LocalFixtureCard({ match }: { match: any }) {
+/* function LocalFixtureCard({ match }: { match: any }) {
   const [editing, setEditing] = useState(false)
   const navigate = useNavigate()
   const isFinished = match.status === 'finished'
@@ -189,6 +189,136 @@ function LocalFixtureCard({ match }: { match: any }) {
           </div>
         </div>
       </div>
+      {editing && <ResultModal match={match} onClose={() => setEditing(false)} />}
+    </>
+  )
+} */
+
+function LocalFixtureCard({ match }: { match: any }) {
+  const [editing, setEditing] = useState(false)
+  const navigate = useNavigate()
+
+  const isFinished = match.status === 'finished'
+  const isPast = match.scheduledAt && new Date(match.scheduledAt) < new Date()
+  const homeWon = isFinished && (match.homeScore ?? 0) > (match.awayScore ?? 0)
+  const awayWon = isFinished && (match.awayScore ?? 0) > (match.homeScore ?? 0)
+  const canEdit = isFinished || isPast
+
+  const handleClick = () => {
+    if (isFinished) {
+      navigate({ to: '/match/$matchId', params: { matchId: String(match.id) } })
+    } else if (isPast) {
+      setEditing(true)
+    }
+  }
+
+  return (
+    <>
+      <div
+        onClick={() => canEdit && handleClick()}
+        className={[
+          'group rounded-2xl border px-4 py-3 transition-all duration-150',
+          isFinished
+            ? 'border-white/[0.05] bg-white/[0.025] hover:border-white/[0.08] hover:bg-white/[0.045]'
+            : 'border-dashed border-white/[0.08] bg-white/[0.015]',
+          canEdit ? 'cursor-pointer' : '',
+        ].join(' ')}
+      >
+        {match.scheduledAt && (
+          <p className="mb-2 text-center text-[11px] font-medium capitalize text-slate-600">
+            {formatMatchDate(match.scheduledAt)}
+          </p>
+        )}
+
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+          <div className="flex min-w-0 items-center justify-end gap-2">
+            <span
+              className={[
+                'truncate text-sm font-semibold',
+                homeWon ? 'text-white' : 'text-slate-300',
+              ].join(' ')}
+            >
+              {match.homeTeam?.shortName ?? match.homeTeam?.name ?? '?'}
+            </span>
+
+            <TeamBadge
+              name={match.homeTeam?.name ?? '?'}
+              logo={match.homeTeam?.logoUrl}
+              size={24}
+            />
+          </div>
+
+          <div className="flex min-w-[86px] items-center justify-center">
+            {isFinished ? (
+              <div className="flex items-baseline justify-center gap-1.5 rounded-xl border border-white/[0.05] bg-black/20 px-3 py-1.5">
+                <span
+                  className={[
+                    'w-5 text-center text-xl font-bold tracking-tight',
+                    homeWon ? 'text-white' : 'text-slate-500',
+                  ].join(' ')}
+                >
+                  {match.homeScore}
+                </span>
+
+                <span className="text-sm font-semibold text-slate-600">–</span>
+
+                <span
+                  className={[
+                    'w-5 text-center text-xl font-bold tracking-tight',
+                    awayWon ? 'text-white' : 'text-slate-500',
+                  ].join(' ')}
+                >
+                  {match.awayScore}
+                </span>
+
+                {match.homePenalties !== null && (
+                  <span className="ml-1 text-[11px] font-medium text-yellow-300">
+                    ({match.homePenalties}-{match.awayPenalties})
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-white/[0.05] bg-black/10 px-4 py-1.5 text-sm font-semibold text-slate-600">
+                {isPast ? 'vs' : 'vs'}
+              </div>
+            )}
+          </div>
+
+          <div className="flex min-w-0 items-center gap-2">
+            <TeamBadge
+              name={match.awayTeam?.name ?? '?'}
+              logo={match.awayTeam?.logoUrl}
+              size={24}
+            />
+
+            <span
+              className={[
+                'truncate text-sm font-semibold',
+                awayWon ? 'text-white' : 'text-slate-300',
+              ].join(' ')}
+            >
+              {match.awayTeam?.shortName ?? match.awayTeam?.name ?? '?'}
+            </span>
+          </div>
+        </div>
+
+        {isFinished && (
+          <div className="mt-2 flex justify-center">
+            <span
+              className={[
+                'h-1.5 w-1.5 rounded-full',
+                match.eventCount > 0 ? 'bg-emerald-400' : 'bg-slate-700',
+              ].join(' ')}
+              title={
+                match.eventCount > 0
+                  ? `${match.eventCount} incidencias`
+                  : 'Sin incidencias'
+              }
+            />
+          </div>
+        )}
+      </div>
+
       {editing && <ResultModal match={match} onClose={() => setEditing(false)} />}
     </>
   )

@@ -36,7 +36,14 @@ function isLocalTeam(leagueId?: number) {
 
 
 interface LocalTeam {
-  id: number; name: string; shortName: string | null; logoUrl: string | null; country: string | null
+  id: number;
+  name: string;
+  shortName: string | null;
+  logoUrl: string | null;
+  country: string | null;
+  externalId: number | null;
+  color: string | null;
+  alternateColor: string | null;
 }
 
 async function fetchLocalTeam(teamId: number): Promise<LocalTeam | null> {
