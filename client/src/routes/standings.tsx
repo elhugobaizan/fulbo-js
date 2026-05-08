@@ -1,12 +1,7 @@
 import { useActiveTournament } from '../hooks/useActiveTournament'
-import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { RefreshCw, Globe, Database, Star } from 'lucide-react'
-import { useStandings } from '../hooks/useStandings'
+import { RefreshCw, Star } from 'lucide-react'
 import { useLocalStandings } from '../hooks/useLocalStandings'
-import { StandingsTable } from '../components/StandingsTable'
-import { CURRENT_SEASON } from '../config/leagues'
-import { LeagueSelector } from '../components/LeagueSelector'
 import { useFavorites } from '../hooks/useFavorites'
 import { TeamBadge } from '../components/TeamBadge'
 
@@ -14,22 +9,10 @@ export const Route = createFileRoute('/standings')({
   component: StandingsPage,
 })
 
-type DataSource = 'api' | 'local'
-
 function StandingsPage() {
-  const [source, setSource] = useState<DataSource>('local')
-  const [leagueId, setLeagueId] = useState(128)
-  const [season] = useState(CURRENT_SEASON)
-
-  const apiQuery = useStandings({ leagueId, season })
   const { data: activeTournament } = useActiveTournament()
   const tournamentId = activeTournament?.id ?? 1
   const localQuery = useLocalStandings(tournamentId)
-
-  const isLoading = source === 'api' ? apiQuery.isLoading : localQuery.isLoading
-  const isError = source === 'api' ? apiQuery.isError : localQuery.isError
-  const isFetching = source === 'api' ? apiQuery.isFetching : localQuery.isFetching
-  const refetch = source === 'api' ? apiQuery.refetch : localQuery.refetch
 
   const qualifiersPerGroup = localQuery.data?.tournament?.qualifiersPerGroup ?? activeTournament?.qualifiersPerGroup ?? 8
   const tournamentName = localQuery.data?.tournament?.name ?? activeTournament?.name ?? ''
@@ -39,60 +22,29 @@ function StandingsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Tabla de Posiciones</h1>
-          {source === 'api' && apiQuery.data?.league && (
-            <p className="text-sm text-gray-400 mt-0.5">
-              {apiQuery.data.league.name} · Temporada {apiQuery.data.league.season}
-            </p>
-          )}
-          {source === 'local' && localQuery.data?.tournament && (
+          {localQuery.data?.tournament && (
             <p className="text-sm text-gray-400 mt-0.5">{localQuery.data.tournament.name}</p>
           )}
         </div>
-        <button onClick={() => refetch()} disabled={isFetching}
+        <button onClick={() => localQuery.refetch()} disabled={localQuery.isFetching}
           className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors disabled:opacity-50">
-          <RefreshCw size={16} className={isFetching ? 'animate-spin' : ''} />
+          <RefreshCw size={16} className={localQuery.isFetching ? 'animate-spin' : ''} />
         </button>
       </div>
 
-      <div className="flex gap-1 bg-gray-900 p-1 rounded-xl border border-gray-800 w-fit">
-        <button onClick={() => setSource('local')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${source === 'local' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-          <Database size={13} /> API Local
-        </button>
-        <button onClick={() => setSource('api')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${source === 'api' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-          <Globe size={13} /> API Externa
-        </button>
-      </div>
+      {localQuery.isLoading && <StandingsSkeleton />}
 
-      {source === 'api' && (
-        <LeagueSelector selected={leagueId} onChange={setLeagueId} />
-      )}
-
-      {isLoading && <StandingsSkeleton />}
-
-      {isError && (
+      {localQuery.isError && (
         <div className="rounded-xl border border-red-800/50 bg-red-900/20 p-6 text-center">
           <p className="text-red-400 font-medium">No se pudo cargar la tabla</p>
-          <button onClick={() => refetch()}
+          <button onClick={() => localQuery.refetch()}
             className="mt-3 px-4 py-1.5 rounded-lg bg-red-800/50 hover:bg-red-800 text-red-200 text-sm transition-colors">
             Reintentar
           </button>
         </div>
       )}
 
-      {source === 'api' && !isLoading && !isError && (
-        <>
-          <StandingsTable
-            standings={apiQuery.data?.league?.standings?.[0] ?? []}
-            leagueId={leagueId}
-            leagueName={apiQuery.data?.league?.name ?? ''}
-          />
-          <Legend />
-        </>
-      )}
-
-      {source === 'local' && !isLoading && !isError && localQuery.data && (
+      {!localQuery.isLoading && !localQuery.isError && localQuery.data && (
         <div className="space-y-6">
           {localQuery.data.groups.map((groupData) => (
             <div key={groupData.group.id} className="space-y-2">
@@ -185,8 +137,7 @@ function LocalStandingsTable({ standings, qualifiersPerGroup, tournamentName, to
                   <button
                     disabled={!tournamentName}
                     onClick={() => toggle({ teamId: s.team.id, teamName: s.team.name, teamLogo: s.team.logo ?? '', leagueId: tournamentId, leagueName: tournamentName })}
-                    className="p-1 rounded-md transition-colors hover:bg-gray-700 disabled:opacity-30"
-                  >
+                    className="p-1 rounded-md transition-colors hover:bg-gray-700 disabled:opacity-30">
                     <Star size={15} className={fav ? 'text-yellow-400 fill-yellow-400' : 'text-gray-600'} />
                   </button>
                 </td>
@@ -209,25 +160,6 @@ function StandingsSkeleton() {
           <div className="flex-1 h-4 bg-gray-800 rounded" />
           <div className="w-8 h-4 bg-gray-800 rounded" />
           <div className="w-10 h-5 bg-gray-700 rounded" />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function Legend() {
-  const items = [
-    { color: 'bg-yellow-400', label: 'Campeón' },
-    { color: 'bg-emerald-500', label: 'Copa Libertadores' },
-    { color: 'bg-blue-400', label: 'Copa Sudamericana' },
-    { color: 'bg-red-500', label: 'Descenso' },
-  ]
-  return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
-      {items.map(({ color, label }) => (
-        <div key={label} className="flex items-center gap-1.5">
-          <span className={`w-2.5 h-2.5 rounded-sm ${color}`} />
-          <span className="text-xs text-gray-400">{label}</span>
         </div>
       ))}
     </div>

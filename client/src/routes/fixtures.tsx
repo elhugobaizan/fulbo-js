@@ -4,7 +4,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight, Check, Lock } from 'lucide-react'
 import { useLocalFixtures } from '../hooks/useLocalFixtures'
 import { TeamBadge } from '../components/TeamBadge'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MatchEventsPanel } from '../components/MatchEventsPanel'
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
@@ -14,6 +14,13 @@ export const Route = createFileRoute('/fixtures')({
 })
 
 const STORAGE_KEY = 'futbol-ar:admin-token'
+
+const ROUND_LABELS: Record<string, string> = {
+  round_of_16: 'Octavos',
+  quarterfinal: 'Cuartos',
+  semifinal: 'Semifinal',
+  final: 'Final',
+}
 const FIXTURES_MATCHDAY_KEY = 'futbol-ar:fixtures-matchday'
 
 function formatMatchDate(dateStr: string): string {
@@ -189,23 +196,37 @@ function LocalFixtureCard({ match }: { match: any }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const KNOCKOUT_KEY = 'knockout'
+
 function FixturesPage() {
-  const [selectedMatchday, setSelectedMatchday] = useState<number | undefined>(() => {
+  const [selectedMatchday, setSelectedMatchday] = useState<number | string | undefined>(() => {
     const saved = sessionStorage.getItem(FIXTURES_MATCHDAY_KEY)
-    return saved ? Number(saved) : undefined
+    return saved === KNOCKOUT_KEY ? KNOCKOUT_KEY : saved ? Number(saved) : undefined
   })
 
   const { data: activeTournament } = useActiveTournament()
   const tournamentId = activeTournament?.id ?? 1
-  const { data: localData, isLoading: loadingLocal } = useLocalFixtures(tournamentId, selectedMatchday)
+  const isKnockout = selectedMatchday === KNOCKOUT_KEY
+  const { data: localData, isLoading: loadingLocal } = useLocalFixtures(tournamentId, isKnockout ? undefined : selectedMatchday as number | undefined)
 
-  const handleMatchdayChange = (m: number) => {
+  const { data: knockoutMatches = [], isLoading: loadingKnockout } = useQuery({
+    queryKey: ['knockout-fixtures', tournamentId],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/local', { params: { resource: 'knockout-fixtures', tournamentId } })
+      return data.data ?? []
+    },
+    enabled: !!tournamentId,
+    staleTime: 1000 * 60 * 5,
+  })
+
+  const handleMatchdayChange = (m: number | string) => {
     setSelectedMatchday(m)
     sessionStorage.setItem(FIXTURES_MATCHDAY_KEY, String(m))
   }
 
   const currentMatchday = selectedMatchday ?? localData?.matchday
   const matchdays = localData?.matchdays ?? []
+  const hasKnockout = knockoutMatches.length > 0
 
   return (
     <div className="space-y-4">
@@ -214,29 +235,42 @@ function FixturesPage() {
       {loadingLocal && <FixturesSkeleton />}
       {!loadingLocal && localData && (
         <>
-          {matchdays.length > 0 && currentMatchday && (
+          {(matchdays.length > 0 || hasKnockout) && currentMatchday && (
             <div className="space-y-2">
+              {/* Arrow selector */}
               <div className="flex items-center gap-2 bg-gray-900 rounded-xl px-3 py-2 border border-gray-800">
-                <button onClick={() => { const idx = matchdays.indexOf(currentMatchday); if (idx > 0) handleMatchdayChange(matchdays[idx - 1]) }}
-                  disabled={matchdays.indexOf(currentMatchday) <= 0}
+                <button onClick={() => {
+                  if (isKnockout) handleMatchdayChange(matchdays[matchdays.length - 1])
+                  else { const idx = matchdays.indexOf(currentMatchday as number); if (idx > 0) handleMatchdayChange(matchdays[idx - 1]) }
+                }}
+                  disabled={!isKnockout && matchdays.indexOf(currentMatchday as number) <= 0}
                   className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white disabled:opacity-30 transition-colors">
                   <ChevronLeft size={18} />
                 </button>
                 <div className="flex-1 flex items-center justify-center gap-2">
-                  <span className="text-sm font-medium text-white">Fecha {currentMatchday}</span>
-                  <span className="text-sm text-gray-500">({matchdays.indexOf(currentMatchday) + 1}/{matchdays.length})</span>
+                  <span className="text-sm font-medium text-white">
+                    {isKnockout ? 'Eliminatoria' : `Fecha ${currentMatchday}`}
+                  </span>
+                  {!isKnockout && <span className="text-sm text-gray-500">({matchdays.indexOf(currentMatchday as number) + 1}/{matchdays.length + (hasKnockout ? 1 : 0)})</span>}
                 </div>
-                <button onClick={() => { const idx = matchdays.indexOf(currentMatchday); if (idx < matchdays.length - 1) handleMatchdayChange(matchdays[idx + 1]) }}
-                  disabled={matchdays.indexOf(currentMatchday) >= matchdays.length - 1}
+                <button onClick={() => {
+                  if (!isKnockout) {
+                    const idx = matchdays.indexOf(currentMatchday as number)
+                    if (idx < matchdays.length - 1) handleMatchdayChange(matchdays[idx + 1])
+                    else if (hasKnockout) handleMatchdayChange(KNOCKOUT_KEY)
+                  }
+                }}
+                  disabled={isKnockout || (!hasKnockout && matchdays.indexOf(currentMatchday as number) >= matchdays.length - 1)}
                   className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white disabled:opacity-30 transition-colors">
                   <ChevronRight size={18} />
                 </button>
               </div>
 
+              {/* Pills */}
               <div className="flex gap-1.5 flex-wrap">
                 {matchdays.map(day => {
                   const isActive = currentMatchday === day
-                  const allHaveEvents = isActive && localData.matches.length > 0 &&
+                  const allHaveEvents = isActive && localData && localData.matches.length > 0 &&
                     localData.matches.every((m: any) => (m.eventCount ?? 0) > 0)
                   return (
                     <button key={day} onClick={() => handleMatchdayChange(day)}
@@ -246,11 +280,18 @@ function FixturesPage() {
                     </button>
                   )
                 })}
+                {hasKnockout && (
+                  <button onClick={() => handleMatchdayChange(KNOCKOUT_KEY)}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${isKnockout ? 'bg-[#74ACDF] text-gray-950' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
+                    Eliminatoria
+                  </button>
+                )}
               </div>
             </div>
           )}
 
-          {localData.matches.length === 0 ? (
+          {/* Group matches */}
+          {!isKnockout && localData && (localData.matches.length === 0 ? (
             <div className="rounded-xl border border-gray-800 p-10 text-center">
               <p className="text-gray-400">No hay partidos para esta fecha</p>
             </div>
@@ -260,7 +301,28 @@ function FixturesPage() {
                 <LocalFixtureCard key={match.id} match={match} />
               ))}
             </div>
-          )}
+          ))}
+
+          {/* Knockout matches */}
+          {isKnockout && (loadingKnockout ? <FixturesSkeleton /> : (
+            <div className="space-y-4">
+              {Object.entries(
+                (knockoutMatches as any[]).reduce((acc: Record<string, any[]>, m: any) => {
+                  const r = m.knockoutRound ?? 'other'
+                  if (!acc[r]) acc[r] = []
+                  acc[r].push(m)
+                  return acc
+                }, {})
+              ).map(([round, matches]) => (
+                <div key={round} className="space-y-2">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{ROUND_LABELS[round] ?? round}</h3>
+                  {(matches as any[]).map((match: any) => (
+                    <LocalFixtureCard key={match.id} match={match} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
         </>
       )}
     </div>

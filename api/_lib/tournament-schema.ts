@@ -49,7 +49,9 @@ export const teams = pgTable('teams', {
   shortName: varchar('short_name', { length: 20 }),        // "Boca", "River"
   logoUrl: varchar('logo_url', { length: 500 }),
   country: varchar('country', { length: 50 }),
-  externalId: integer('external_id'),                      // ID de api-football (opcional)
+  externalId: integer('external_id'),
+  color: varchar('color', { length: 6 }),
+  alternateColor: varchar('alternate_color', { length: 6 }),
   createdAt: timestamp('created_at').defaultNow(),
 })
 
@@ -156,6 +158,7 @@ export const localPlayers = pgTable('local_players', {
   teamId: integer('team_id').references(() => teams.id).notNull(),
   tournamentId: integer('tournament_id').references(() => tournaments.id).notNull(),
   position: varchar('position', { length: 20 }),
+  externalId: integer('external_id'),
   createdAt: timestamp('created_at').defaultNow(),
 })
 
