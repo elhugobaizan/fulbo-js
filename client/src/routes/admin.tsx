@@ -759,6 +759,8 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void }
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-tournaments'] })
       queryClient.invalidateQueries({ queryKey: ['admin-tournament'] })
+      queryClient.invalidateQueries({ queryKey: ['active-tournament'] })
+      sessionStorage.removeItem('futbol-ar:fixtures-matchday') // Forzar recálculo de fixture activo
     },
   })
 

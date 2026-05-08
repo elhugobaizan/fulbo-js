@@ -19,16 +19,21 @@ function StandingsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Tabla de Posiciones</h1>
-          {localQuery.data?.tournament && (
-            <p className="text-sm text-gray-400 mt-0.5">{localQuery.data.tournament.name}</p>
-          )}
+          <h1 className="text-3xl font-bold tracking-tight text-white">
+            Posiciones
+          </h1>
+          <p className="mt-1 text-sm font-medium text-slate-400">
+            {localQuery.data?.tournament?.name ?? activeTournament?.name ?? 'Cargando torneo...'}
+          </p>
         </div>
-        <button onClick={() => localQuery.refetch()} disabled={localQuery.isFetching}
-          className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors disabled:opacity-50">
-          <RefreshCw size={16} className={localQuery.isFetching ? 'animate-spin' : ''} />
+
+        <button
+          onClick={() => localQuery.refetch()}
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-slate-400 transition-all duration-150 hover:border-white/[0.1] hover:bg-white/[0.05] hover:text-white"
+        >
+          <RefreshCw size={17} strokeWidth={1.8} />
         </button>
       </div>
 
@@ -45,10 +50,13 @@ function StandingsPage() {
       )}
 
       {!localQuery.isLoading && !localQuery.isError && localQuery.data && (
-        <div className="space-y-6">
+        <div className="mb-3 flex items-center justify-between">
           {localQuery.data.groups.map((groupData) => (
-            <div key={groupData.group.id} className="space-y-2">
-              <h2 className="text-sm font-semibold text-gray-300">{groupData.group.name}</h2>
+            <div>
+              <h2 className="text-base font-bold tracking-tight text-white">{groupData.group.name}</h2>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                {groupData.standings.length} equipos
+              </p>
               <LocalStandingsTable
                 standings={groupData.standings}
                 qualifiersPerGroup={qualifiersPerGroup}
@@ -103,15 +111,17 @@ function LocalStandingsTable({ standings, qualifiersPerGroup, tournamentName, to
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-800/60">
-          {standings.map((s: any, index: number) => {
+          {standings.map((s: any) => {
             const qualifies = Number(s.rank) <= Number(qualifiersPerGroup)
-            const isLast = s.rank === qualifiersPerGroup
             const fav = isFavorite(s.team.id)
             return (
               <tr key={s.team.id}
                 onClick={() => navigate({ to: '/team/$teamId', params: { teamId: String(s.team.id) }, search: { leagueId: tournamentId, leagueName: tournamentName } })}
                 style={{ borderLeft: qualifies ? '2px solid rgb(16 185 129)' : '2px solid transparent' }}
-                className={`cursor-pointer hover:bg-gray-800/50 transition-colors ${index % 2 === 0 ? 'bg-gray-900/30' : 'bg-transparent'} ${isLast ? 'border-b border-b-emerald-500/40' : ''}`}>
+                className={[
+                  'group border-b border-white/[0.04] transition-colors hover:bg-white/[0.025]',
+                  qualifies ? 'bg-emerald-400/[0.018]' : '',
+                ].join(' ')}>
                 <td className="pl-4 pr-2 py-3">
                   <span className={`text-sm font-bold ${qualifies ? 'text-emerald-400' : 'text-gray-400'}`}>{s.rank}</span>
                 </td>
@@ -135,10 +145,17 @@ function LocalStandingsTable({ standings, qualifiersPerGroup, tournamentName, to
                 </td>
                 <td className="pr-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                   <button
-                    disabled={!tournamentName}
                     onClick={() => toggle({ teamId: s.team.id, teamName: s.team.name, teamLogo: s.team.logo ?? '', leagueId: tournamentId, leagueName: tournamentName })}
-                    className="p-1 rounded-md transition-colors hover:bg-gray-700 disabled:opacity-30">
-                    <Star size={15} className={fav ? 'text-yellow-400 fill-yellow-400' : 'text-gray-600'} />
+                    className="rounded-lg p-1.5 text-slate-600 transition-colors hover:bg-white/[0.04] hover:text-yellow-300"
+                  >
+                    <Star
+                      size={17}
+                      className={
+                        fav
+                          ? 'fill-yellow-400 text-yellow-400'
+                          : 'text-slate-600'
+                      }
+                    />
                   </button>
                 </td>
               </tr>
