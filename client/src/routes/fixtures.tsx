@@ -1,5 +1,5 @@
 import { useActiveTournament } from '../hooks/useActiveTournament'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight, Check, Lock } from 'lucide-react'
 import { useLocalFixtures } from '../hooks/useLocalFixtures'
@@ -92,7 +92,12 @@ function ResultModal({ match, onClose }: { match: any; onClose: () => void }) {
       }, { headers: { 'x-admin-token': t } })
       return data.data
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['local-fixtures'] }); onClose() },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['local-fixtures'] });
+      queryClient.invalidateQueries({ queryKey: ['knockout-fixtures'] });
+      queryClient.invalidateQueries({ queryKey: ['bracket', String(match.id)] });
+      onClose()
+    },
   })
 
   return (
@@ -319,6 +324,13 @@ function FixturesPage() {
   const currentMatchday = selectedMatchday ?? localData?.matchday
   const matchdays = localData?.matchdays ?? []
   const hasKnockout = knockoutMatches.length > 0
+
+  // Reset to last matchday if current selection doesn't exist in this tournament
+  useEffect(() => {
+    if (!isKnockout && matchdays.length > 0 && currentMatchday !== undefined && !matchdays.includes(currentMatchday as number)) {
+      handleMatchdayChange(matchdays[matchdays.length - 1])
+    }
+  }, [matchdays, tournamentId])
 
   const groupedMatches = groupMatchesByDate(localData?.matches || [])
   const dateGroups = Object.entries(groupedMatches)
