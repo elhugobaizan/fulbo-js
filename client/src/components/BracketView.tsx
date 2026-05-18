@@ -5,6 +5,8 @@ import { apiClient } from '../lib/api'
 import type { Bracket, BracketSlot } from '../hooks/useBracket'
 
 const ROUND_LABELS: Record<string, string> = {
+  round_of_64: '32avos',
+  round_of_32: '16avos',
   round_of_16: 'Octavos',
   quarterfinal: 'Cuartos',
   semifinal: 'Semifinal',
@@ -127,7 +129,12 @@ function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void
       showPenalties && homePen !== '' ? Number(homePen) : null,
       showPenalties && awayPen !== '' ? Number(awayPen) : null,
     ),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['bracket'] }); onClose() },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bracket'] })
+      queryClient.invalidateQueries({ queryKey: ['knockout-fixtures'] })
+      queryClient.invalidateQueries({ queryKey: ['knockout-matches'] })
+      onClose()
+    },
   })
 
   return (

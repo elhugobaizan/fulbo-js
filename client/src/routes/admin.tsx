@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Lock, Plus, Check, X, Trophy, Trash2, Calendar } from 'lucide-react'
@@ -13,6 +13,8 @@ export const Route = createFileRoute('/admin')({
 const STORAGE_KEY = 'futbol-ar:admin-token'
 
 const KNOCKOUT_ROUNDS = [
+  { value: 'round_of_64', label: '32avos' },
+  { value: 'round_of_32', label: '16avos' },
   { value: 'round_of_16', label: 'Octavos' },
   { value: 'quarterfinal', label: 'Cuartos' },
   { value: 'semifinal', label: 'Semifinal' },
@@ -50,11 +52,19 @@ async function fetchAllTournaments(token: string) {
   return data.data ?? []
 }
 
-async function generateKnockout(token: string, tournamentId: number) {
+async function generateKnockout(token: string, tournamentId: number, round: string) {
   const { data } = await apiClient.post('/admin?action=generate-knockout',
-    { tournamentId }, { headers: { 'x-admin-token': token } }
+    { tournamentId, round }, { headers: { 'x-admin-token': token } }
   )
   return data.data
+}
+
+async function fetchAllTeamsForManual(token: string) {
+  const { data } = await apiClient.get('/admin', {
+    params: { action: 'teams' },
+    headers: { 'x-admin-token': token },
+  })
+  return data.data ?? []
 }
 
 async function fetchKnockoutMatches(tournamentId: number) {
@@ -160,7 +170,7 @@ function LoginForm({ onLogin }: { onLogin: (token: string) => void }) {
 
 // ─── Match Result Form ────────────────────────────────────────────────────────
 
-function MatchResultForm({ match, token, onSaved, onClose }: { match: any; token: string; onSaved: () => void; onClose: () => void }) {
+function MatchResultForm({ match, tournamentId, token, onSaved, onClose }: { match: any; tournamentId: number; token: string; onSaved: () => void; onClose: () => void }) {
   const [homeScore, setHomeScore] = useState(match.homeScore ?? '')
   const [awayScore, setAwayScore] = useState(match.awayScore ?? '')
   const [homePen, setHomePen] = useState(match.homePenalties ?? '')
@@ -179,7 +189,11 @@ function MatchResultForm({ match, token, onSaved, onClose }: { match: any; token
       awayPenalties: showPenalties && awayPen !== '' ? Number(awayPen) : null,
       status: 'finished',
     }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-tournament'] }); onSaved() },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-tournament'] });
+      onSaved();
+      queryClient.invalidateQueries({ queryKey: ['knockout-fixtures', tournamentId] })
+    },
   })
 
   return (
@@ -585,7 +599,7 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
                   return (
                     <div key={match.id}>
                       {editingMatch === match.id ? (
-                        <MatchResultForm match={enriched} token={token} onSaved={() => setEditingMatch(null)} onClose={() => setEditingMatch(null)} />
+                        <MatchResultForm match={enriched} tournamentId={tournamentId} token={token} onSaved={() => setEditingMatch(null)} onClose={() => setEditingMatch(null)} />
                       ) : (
                         <button onClick={() => setEditingMatch(match.id)}
                           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors text-left ${match.status === 'finished' ? 'border-gray-800 bg-gray-900/40 hover:bg-gray-900/70' : 'border-dashed border-gray-700 hover:border-gray-500'}`}>
@@ -627,18 +641,178 @@ const ROUND_LABELS: Record<string, string> = {
   final: 'Final',
 }
 
+const ROUND_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'final']
+const NEXT_ROUND: Record<string, string> = {
+  round_of_64: 'round_of_32',
+  round_of_32: 'round_of_16',
+  round_of_16: 'quarterfinal',
+  quarterfinal: 'semifinal',
+  semifinal: 'final',
+}
+
+
+// ─── Manual Knockout Form ─────────────────────────────────────────────────────
+
+const TEAM_COUNTS = [4, 8, 16, 32, 64]
+const FIRST_ROUND_FOR_COUNT: Record<number, string> = {
+  4: 'semifinal', 8: 'quarterfinal', 16: 'round_of_16', 32: 'round_of_32', 64: 'round_of_64',
+}
+
+function ManualKnockoutForm({ tournamentId, allTeams, token, createMatchMutation, tournamentCountry }: {
+  tournamentId: number; allTeams: any[]; token: string; createMatchMutation: any; tournamentCountry: string | null
+}) {
+  const queryClient = useQueryClient()
+  const [teamCount, setTeamCount] = useState<number | null>(null)
+  const [selections, setSelections] = useState<Record<number, { homeTeamId: string; awayTeamId: string }>>({})
+  const [newTeamPos, setNewTeamPos] = useState<{ pos: number; side: 'home' | 'away' } | null>(null)
+  const [newTeamName, setNewTeamName] = useState('')
+  const [newTeamShort, setNewTeamShort] = useState('')
+
+  const createTeamMutation = useMutation<any, Error, void>({
+    mutationFn: async () => {
+      const { data } = await apiClient.post('/admin?action=teams',
+        { name: newTeamName, shortName: newTeamShort, country: tournamentCountry ?? null },
+        { headers: { 'x-admin-token': token } }
+      )
+      return data.data
+    },
+    onSuccess: (team) => {
+      if (!newTeamPos) return
+      setSelections(prev => ({
+        ...prev,
+        [newTeamPos.pos]: {
+          ...prev[newTeamPos.pos] ?? { homeTeamId: '', awayTeamId: '' },
+          [newTeamPos.side === 'home' ? 'homeTeamId' : 'awayTeamId']: String(team.id)
+        }
+      }))
+      queryClient.invalidateQueries({ queryKey: ['all-teams-manual'] })
+      setNewTeamPos(null); setNewTeamName(''); setNewTeamShort('')
+    },
+  })
+
+  if (teamCount === null) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-gray-400">¿Cuántos equipos participan en la primera ronda?</p>
+        <div className="flex gap-2 flex-wrap">
+          {TEAM_COUNTS.map(n => (
+            <button key={n} onClick={() => setTeamCount(n)}
+              className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-[#74ACDF] hover:text-gray-950 text-gray-300 text-sm font-medium transition-colors">
+              {n} equipos
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const round = FIRST_ROUND_FOR_COUNT[teamCount] ?? 'round_of_16'
+  const matchCount = teamCount / 2
+  const cruces = Array.from({ length: matchCount }, (_, i) => i + 1)
+
+  const handleSave = async () => {
+    for (const pos of cruces) {
+      const sel = selections[pos]
+      if (!sel?.homeTeamId || !sel?.awayTeamId) continue
+      await createMatchMutation.mutateAsync({
+        tournamentId, phase: 'knockout', knockoutRound: round,
+        bracketPosition: pos,
+        homeTeamId: Number(sel.homeTeamId), awayTeamId: Number(sel.awayTeamId),
+        scheduledAt: null,
+      })
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-400">{ROUND_LABELS[round] ?? round} — {teamCount} equipos ({matchCount} cruces)</p>
+        <button onClick={() => setTeamCount(null)} className="text-xs text-gray-500 hover:text-white">Cambiar</button>
+      </div>
+      <div className="space-y-2">
+        {cruces.map(pos => {
+          const sel = selections[pos] ?? { homeTeamId: '', awayTeamId: '' }
+          return (
+            <div key={pos} className="rounded-xl border border-gray-800 bg-gray-900/40 p-3 space-y-1.5">
+              <p className="text-xs text-gray-600">Cruce {pos}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(['home', 'away'] as const).map(side => {
+                  const val = side === 'home' ? sel.homeTeamId : sel.awayTeamId
+                  return (
+                    <div key={side} className="space-y-1">
+                      <select value={val}
+                        onChange={e => {
+                          if (e.target.value === '__new__') { setNewTeamPos({ pos, side }); return }
+                          setSelections(prev => ({ ...prev, [pos]: { ...sel, [side === 'home' ? 'homeTeamId' : 'awayTeamId']: e.target.value } }))
+                        }}
+                        className="w-full px-2 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]">
+                        <option value="">{side === 'home' ? 'Local...' : 'Visitante...'}</option>
+                        {allTeams.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        <option value="__new__">＋ Crear equipo nuevo</option>
+                      </select>
+                      {newTeamPos?.pos === pos && newTeamPos?.side === side && (
+                        <div className="flex gap-1">
+                          <input value={newTeamName} onChange={e => setNewTeamName(e.target.value)}
+                            placeholder="Nombre" className="flex-1 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]" />
+                          <input value={newTeamShort} onChange={e => setNewTeamShort(e.target.value)}
+                            placeholder="Abrev." className="w-16 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]" />
+                          <button onClick={() => createTeamMutation.mutate()} disabled={!newTeamName || createTeamMutation.isPending}
+                            className="px-2 py-1 rounded bg-[#74ACDF] text-gray-950 text-xs disabled:opacity-50">
+                            <Check size={10} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <button onClick={handleSave} disabled={createMatchMutation.isPending}
+        className="w-full py-2 rounded-xl bg-[#74ACDF] text-gray-950 font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+        <Check size={14} /> {createMatchMutation.isPending ? 'Guardando...' : 'Guardar cruces'}
+      </button>
+    </div>
+  )
+}
+
 function KnockoutSection({ token, tournamentId, tournament }: { token: string; tournamentId: number; tournament: any }) {
   const queryClient = useQueryClient()
   const [editingDate, setEditingDate] = useState<number | null>(null)
   const [dateValue, setDateValue] = useState('')
+
+  const hasGroups = (tournament as any)?.hasGroups ?? true
+  const tournamentCountry = (tournament as any)?.country ?? null
 
   const { data: knockoutMatches = [], isLoading } = useQuery({
     queryKey: ['knockout-matches', tournamentId],
     queryFn: () => fetchKnockoutMatches(tournamentId),
   })
 
-  const generateMutation = useMutation<any, Error, void>({
-    mutationFn: () => generateKnockout(token, tournamentId),
+  const { data: allTeamsRaw = [] } = useQuery({
+    queryKey: ['all-teams-manual', tournamentId],
+    queryFn: () => fetchAllTeamsForManual(token),
+    staleTime: 1000 * 60 * 10,
+    enabled: !hasGroups,
+  })
+
+  // Filter by country if set
+  const allTeamsForManual = tournamentCountry
+    ? (allTeamsRaw as any[]).filter((t: any) => !t.country || t.country === tournamentCountry)
+    : allTeamsRaw as any[]
+
+  const createMatchMutation = useMutation<any, Error, any>({
+    mutationFn: (payload) => apiClient.post('/admin?action=matches', payload, { headers: { 'x-admin-token': token } }).then(r => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knockout-matches', tournamentId] })
+      queryClient.invalidateQueries({ queryKey: ['all-teams-manual', tournamentId] })
+    },
+  })
+
+  const generateMutation = useMutation<any, Error, string>({
+    mutationFn: (round) => generateKnockout(token, tournamentId, round),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['knockout-matches', tournamentId] }),
   })
 
@@ -660,14 +834,27 @@ function KnockoutSection({ token, tournamentId, tournament }: { token: string; t
     return acc
   }, {})
 
+  // Determine which round to generate next
+  const existingRounds = new Set(Object.keys(byRound))
+  const nextRoundToGenerate = (() => {
+    if (!hasGroups) return null // manual for no-groups tournaments
+    if (existingRounds.size === 0) return 'round_of_16'
+    const lastRound = ROUND_ORDER.filter(r => existingRounds.has(r)).pop()
+    if (!lastRound) return 'round_of_16'
+    const lastRoundMatches = byRound[lastRound] ?? []
+    const allFinished = lastRoundMatches.length > 0 && lastRoundMatches.every((m: any) => m.status === 'finished')
+    if (!allFinished) return null
+    return NEXT_ROUND[lastRound] ?? null
+  })()
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Fase Eliminatoria</h2>
-        {knockoutMatches.length === 0 && knockoutStarted && (
-          <button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}
+        {knockoutStarted && nextRoundToGenerate && (
+          <button onClick={() => generateMutation.mutate(nextRoundToGenerate)} disabled={generateMutation.isPending}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#74ACDF] text-gray-950 font-medium text-sm disabled:opacity-50 transition-colors">
-            <Trophy size={13} /> {generateMutation.isPending ? 'Generando...' : 'Generar Octavos'}
+            <Trophy size={13} /> {generateMutation.isPending ? 'Generando...' : `Generar ${ROUND_LABELS[nextRoundToGenerate] ?? nextRoundToGenerate}`}
           </button>
         )}
         {!knockoutStarted && (
@@ -681,16 +868,31 @@ function KnockoutSection({ token, tournamentId, tournament }: { token: string; t
 
       {isLoading && <p className="text-gray-500 text-sm">Cargando...</p>}
 
-      {knockoutMatches.length === 0 && !isLoading && knockoutStarted && (
+      {knockoutMatches.length === 0 && !isLoading && knockoutStarted && !hasGroups && (
+        <ManualKnockoutForm
+          tournamentId={tournamentId}
+          allTeams={allTeamsForManual}
+          token={token}
+          createMatchMutation={createMatchMutation}
+          tournamentCountry={tournamentCountry}
+        />
+      )}
+
+      {knockoutMatches.length === 0 && !isLoading && knockoutStarted && hasGroups && (
         <div className="rounded-xl border border-dashed border-gray-700 p-8 text-center">
           <p className="text-gray-400 text-sm">No hay partidos de eliminatoria generados todavía</p>
         </div>
       )}
 
-      {Object.entries(byRound).map(([round, roundMatches]) => (
+      {ROUND_ORDER.filter(r => byRound[r]).reverse().map(round => (
         <div key={round} className="space-y-2">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{ROUND_LABELS[round] ?? round}</h3>
-          {(roundMatches as any[]).map((match: any) => (
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{ROUND_LABELS[round] ?? round}</h3>
+            {byRound[round]?.every((m: any) => m.status === 'finished') && (
+              <span className="text-[10px] text-emerald-500">✓ Completa</span>
+            )}
+          </div>
+          {(byRound[round] as any[]).map((match: any) => (
             <div key={match.id} className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-3 space-y-2">
               <div className="flex items-center gap-3">
                 <span className="text-sm text-white flex-1 text-right truncate font-medium">
@@ -740,9 +942,11 @@ function KnockoutSection({ token, tournamentId, tournament }: { token: string; t
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
-function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void }) {
+function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void; }) {
   const [editingMatch, setEditingMatch] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<'groups' | 'bracket'>('groups')
+
+
   const queryClient = useQueryClient()
 
   const { data: allTournaments = [] } = useQuery({
@@ -770,14 +974,19 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void }
     enabled: !!tournamentId,
   })
 
+  const { tournament, groups: groupsData, matches: allMatches } = data ?? {}
+  const allTeams = groupsData?.flatMap((g: any) => g.teams) ?? []
+
+  useEffect(() => {
+    if (tournament && !tournament.hasGroups) setActiveTab('bracket')
+    else if (tournament?.hasGroups) setActiveTab('groups')
+  }, [tournament?.id])
+
   if (isLoading) return (
     <div className="flex items-center justify-center min-h-screen">
       <p className="text-gray-400">Cargando...</p>
     </div>
   )
-
-  const { tournament, groups: groupsData, matches: allMatches } = data ?? {}
-  const allTeams = groupsData?.flatMap((g: any) => g.teams) ?? []
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
@@ -822,10 +1031,12 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void }
       )}
 
       <div className="flex gap-1 bg-gray-900 p-1 rounded-xl border border-gray-800">
-        <button onClick={() => setActiveTab('groups')}
-          className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'groups' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-          Fase de Grupos
-        </button>
+        {tournament?.hasGroups && (
+          <button onClick={() => setActiveTab('groups')}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'groups' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+            Fase de Grupos
+          </button>
+        )}
         <button onClick={() => setActiveTab('bracket')}
           className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${activeTab === 'bracket' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
           <Trophy size={14} /> Eliminatoria

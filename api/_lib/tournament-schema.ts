@@ -16,12 +16,23 @@ export const matchStatusEnum = pgEnum('match_status', [
 ])
 
 export const knockoutRoundEnum = pgEnum('knockout_round', [
+  'round_of_64',   // ronda de 64 (opcional, para torneos grandes)
+  'round_of_32',   // ronda de 32 (opcional, para torneos grandes)
   'round_of_16',   // octavos
   'quarterfinal',  // cuartos
   'semifinal',     // semifinal
   'third_place',   // tercer puesto (opcional)
   'final',         // final
 ])
+
+export const KNOCKOUT_ROUNDS = [
+  'round_of_64',
+  'round_of_32',
+  'round_of_16',
+  'quarterfinal',
+  'semifinal',
+  'final',
+] as const
 
 // ─── Tournaments ─────────────────────────────────────────────────────────────
 

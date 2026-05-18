@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { useActiveTournament } from '../hooks/useActiveTournament'
 import { Home, Calendar, LayoutList, Users, Trophy } from 'lucide-react'
 
 const navLinks = [
@@ -25,6 +26,9 @@ function Logo() {
 }
 
 export function Navbar() {
+  const { data: activeTournament } = useActiveTournament()
+  const hasGroups = activeTournament?.hasGroups ?? true
+
   return (
     <nav className="sticky top-0 z-50 border-b border-white/[0.06] bg-slate-950/80 backdrop-blur-xl">
       <div className="container mx-auto max-w-6xl px-6">
@@ -40,7 +44,7 @@ export function Navbar() {
           </Link>
 
           <div className="flex items-center gap-3">
-            {navLinks.map(({ to, label, icon: Icon, exact }) => (
+            {navLinks.filter(({ to }) => to !== '/standings' || hasGroups).map(({ to, label, icon: Icon, exact }) => (
               <Link
                 key={to}
                 to={to}

@@ -57,7 +57,7 @@ function loadWizard(): WizardState {
   try {
     const raw = sessionStorage.getItem(WIZARD_KEY)
     if (raw) return JSON.parse(raw)
-  } catch {}
+  } catch { }
   return { step: 0, tournament: null, createdGroups: [], teamsByGroup: {} }
 }
 
@@ -550,7 +550,7 @@ function SetupPage() {
 
       <div className="bg-gray-900/50 rounded-2xl border border-gray-800 p-6">
         {step === 0 && (
-          <Step1 token={token} onNext={(t) => update({ tournament: t, step: 1 })} />
+          <Step1 token={token} onNext={(t) => update({ tournament: t, step: t.hasGroups ? 1 : 3 })} />
         )}
         {step === 1 && tournament && (
           <Step2
@@ -560,6 +560,19 @@ function SetupPage() {
             onBack={() => update({ step: 0 })}
           />
         )}
+        {step === 3 && (
+          <div className="text-center space-y-4 py-4">
+            <div className="w-12 h-12 rounded-full bg-emerald-900/40 flex items-center justify-center mx-auto">
+              <span className="text-2xl">✓</span>
+            </div>
+            <p className="text-white font-medium">Torneo creado correctamente</p>
+            <p className="text-sm text-gray-400">El torneo no tiene fase de grupos — podés configurar los cruces de eliminatoria desde el admin.</p>
+            <a href="/admin" className="block w-full py-2 rounded-xl bg-[#74ACDF] text-gray-950 font-semibold text-sm text-center">
+              Ir al Admin
+            </a>
+          </div>
+        )}
+
         {step === 2 && createdGroups.length > 0 && (
           <Step3
             token={token}

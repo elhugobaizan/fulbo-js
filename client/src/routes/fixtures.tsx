@@ -16,12 +16,15 @@ export const Route = createFileRoute('/fixtures')({
 const STORAGE_KEY = 'futbol-ar:admin-token'
 
 const ROUND_LABELS: Record<string, string> = {
+  round_of_64: '32avos',
+  round_of_32: '16avos',
   round_of_16: 'Octavos',
   quarterfinal: 'Cuartos',
   semifinal: 'Semifinal',
   final: 'Final',
 }
 const FIXTURES_MATCHDAY_KEY = 'futbol-ar:fixtures-matchday'
+const ROUND_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'final']
 
 function getDateKey(dateStr?: string | null) {
   if (!dateStr) return 'sin-fecha'
@@ -462,7 +465,7 @@ function FixturesPage() {
                   acc[r].push(m)
                   return acc
                 }, {})
-              ).map(([round, matches]) => (
+              ).sort(([a], [b]) => ROUND_ORDER.indexOf(b) - ROUND_ORDER.indexOf(a)).map(([round, matches]) => (
                 <div key={round} className="space-y-2">
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{ROUND_LABELS[round] ?? round}</h3>
                   {(matches as any[]).map((match: any) => (

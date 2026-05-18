@@ -117,10 +117,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(201).json({ data: team })
     }
 
-    // teams list
-    if (action === 'teams' && req.method === 'GET') {
-      const allTeams = await db.select().from(teams).orderBy(teams.name)
-      return ok(res, allTeams)
+    // teams CRUD
+    if (action === 'teams') {
+      if (req.method === 'GET') {
+        const allTeams = await db.select().from(teams).orderBy(teams.name)
+        return ok(res, allTeams)
+      }
+      if (req.method === 'POST') {
+        const { name, shortName, country } = req.body
+        if (!name) return err(res, 'name required', 400)
+        const [team] = await db.insert(teams).values({
+          name, shortName: (shortName || name).slice(0, 20), country: country ?? null
+        }).returning()
+        return res.status(201).json({ data: team })
+      }
     }
 
     // list all tournaments

@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/neon-http'
 import { eq, and } from 'drizzle-orm'
 import { matches, teams, groups, groupTeams, bracketRules } from '../_lib/tournament-schema'
 import { ok, err } from '../_lib/helpers'
+import { KNOCKOUT_ROUNDS } from '../_lib/tournament-schema'
 
 function getDb() {
   return drizzle(neon(process.env.DATABASE_URL!))
@@ -160,7 +161,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Construir bracket por ronda
-    const rounds = ['round_of_16', 'quarterfinal', 'semifinal', 'final']
+    const rounds = KNOCKOUT_ROUNDS.filter(r => rules.some(rule => rule.knockoutRound === r))
     const bracket: Record<string, any[]> = {}
 
     for (const round of rounds) {
