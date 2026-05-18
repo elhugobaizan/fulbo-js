@@ -346,19 +346,19 @@ function ruleLabel(rule: any, groups: any[], allRules: any[]): string {
   return parts.join(' ')
 }
 
-function NewBracketRuleForm({ groups, allRules, token, tournamentId }: { groups: any[]; allRules: any[]; token: string; tournamentId: number }) {
+function NewBracketRuleForm({ groups, allRules, token, tournamentId, hasGroups = true }: { groups: any[]; allRules: any[]; token: string; tournamentId: number; hasGroups?: boolean }) {
   const [open, setOpen] = useState(false)
   const [knockoutRound, setKnockoutRound] = useState('round_of_16')
   const [bracketPosition, setBracketPosition] = useState('')
 
   // Local
-  const [homeSource, setHomeSource] = useState<'group' | 'winner'>('group')
+  const [homeSource, setHomeSource] = useState<'group' | 'winner'>(() => hasGroups ? 'group' : 'winner')
   const [homeGroupId, setHomeGroupId] = useState('')
   const [homePosition, setHomePosition] = useState('')
   const [homeWinnerOf, setHomeWinnerOf] = useState('')
 
   // Visitante
-  const [awaySource, setAwaySource] = useState<'group' | 'winner'>('group')
+  const [awaySource, setAwaySource] = useState<'group' | 'winner'>(() => hasGroups ? 'group' : 'winner')
   const [awayGroupId, setAwayGroupId] = useState('')
   const [awayPosition, setAwayPosition] = useState('')
   const [awayWinnerOf, setAwayWinnerOf] = useState('')
@@ -367,10 +367,9 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId }: { groups:
 
   // Reglas de rondas anteriores disponibles para "ganador de"
   const prevRoundRules = allRules.filter((r: any) => {
-    const order = ['round_of_16', 'quarterfinal', 'semifinal', 'final']
-    const currentIdx = order.indexOf(knockoutRound)
-    const ruleIdx = order.indexOf(r.knockoutRound)
-    return ruleIdx < currentIdx
+    const currentIdx = ROUND_ORDER.indexOf(knockoutRound)
+    const ruleIdx = ROUND_ORDER.indexOf(r.knockoutRound)
+    return ruleIdx < currentIdx && ruleIdx >= 0
   })
 
   const mutation = useMutation<any, Error, void>({
@@ -393,10 +392,14 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId }: { groups:
     },
   })
 
+  // For no-groups first round: no prev rules exist, so source fields are optional
+  const isFirstRoundNoGroups = !hasGroups && prevRoundRules.length === 0
   const isValid = bracketPosition && (
-    homeSource === 'group' ? (homeGroupId && homePosition) : homeWinnerOf
+    isFirstRoundNoGroups ? true :
+      (homeSource === 'group' ? (homeGroupId && homePosition) : homeWinnerOf)
   ) && (
-      awaySource === 'group' ? (awayGroupId && awayPosition) : awayWinnerOf
+      isFirstRoundNoGroups ? true :
+        (awaySource === 'group' ? (awayGroupId && awayPosition) : awayWinnerOf)
     )
 
   const SlotConfig = ({
@@ -405,17 +408,19 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId }: { groups:
     <div className="space-y-2 p-3 rounded-lg bg-gray-800 border border-gray-700">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-gray-300 uppercase">{label}</span>
-        <div className="flex gap-1">
-          <button onClick={() => setSource('group')}
-            className={`px-2 py-0.5 rounded text-xs transition-colors ${source === 'group' ? 'bg-[#74ACDF] text-gray-950 font-medium' : 'text-gray-500 hover:text-white'}`}>
-            Grupo
-          </button>
-          <button onClick={() => setSource('winner')}
-            disabled={prevRoundRules.length === 0}
-            className={`px-2 py-0.5 rounded text-xs transition-colors disabled:opacity-30 ${source === 'winner' ? 'bg-[#74ACDF] text-gray-950 font-medium' : 'text-gray-500 hover:text-white'}`}>
-            Ganador
-          </button>
-        </div>
+        {hasGroups && (
+          <div className="flex gap-1">
+            <button onClick={() => setSource('group')}
+              className={`px-2 py-0.5 rounded text-xs transition-colors ${source === 'group' ? 'bg-[#74ACDF] text-gray-950 font-medium' : 'text-gray-500 hover:text-white'}`}>
+              Grupo
+            </button>
+            <button onClick={() => setSource('winner')}
+              disabled={prevRoundRules.length === 0}
+              className={`px-2 py-0.5 rounded text-xs transition-colors disabled:opacity-30 ${source === 'winner' ? 'bg-[#74ACDF] text-gray-950 font-medium' : 'text-gray-500 hover:text-white'}`}>
+              Ganador
+            </button>
+          </div>
+        )}
       </div>
 
       {source === 'group' ? (
@@ -485,7 +490,7 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId }: { groups:
   )
 }
 
-function BracketRulesSection({ token, groups, tournamentId }: { token: string; groups: any[]; tournamentId: number }) {
+function BracketRulesSection({ token, groups, tournamentId, hasGroups = true }: { token: string; groups: any[]; tournamentId: number; hasGroups?: boolean }) {
   const queryClient = useQueryClient()
 
   const { data: rules = [], isLoading } = useQuery({
@@ -508,7 +513,8 @@ function BracketRulesSection({ token, groups, tournamentId }: { token: string; g
 
   return (
     <div className="space-y-5">
-      {KNOCKOUT_ROUNDS.map(({ value, label }) => (
+      <NewBracketRuleForm groups={groups} allRules={rules} token={token} tournamentId={tournamentId} hasGroups={hasGroups} />
+      {[...KNOCKOUT_ROUNDS].reverse().map(({ value, label }) => (
         <div key={value} className="space-y-2">
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{label}</h3>
           {byRound[value].map((rule: any) => (
@@ -527,7 +533,6 @@ function BracketRulesSection({ token, groups, tournamentId }: { token: string; g
           )}
         </div>
       ))}
-      <NewBracketRuleForm groups={groups} allRules={rules} token={token} tournamentId={tournamentId} />
     </div>
   )
 }
@@ -719,6 +724,13 @@ function ManualKnockoutForm({ tournamentId, allTeams, token, createMatchMutation
         bracketPosition: pos,
         homeTeamId: Number(sel.homeTeamId), awayTeamId: Number(sel.awayTeamId),
         scheduledAt: null,
+      })
+      // Auto-create bracket rule for this match so next rounds can reference it
+      await createBracketRule(token, {
+        tournamentId, knockoutRound: round, bracketPosition: pos,
+        homeGroupId: null, homePosition: null,
+        awayGroupId: null, awayPosition: null,
+        homeWinnerOf: null, awayWinnerOf: null,
       })
     }
   }
@@ -940,6 +952,35 @@ function KnockoutSection({ token, tournamentId, tournament }: { token: string; t
   )
 }
 
+
+// ─── Bracket Sub-Tabs ─────────────────────────────────────────────────────────
+
+function BracketSubTabs({ token, tournamentId, tournament, groupsData }: {
+  token: string; tournamentId: number; tournament: any; groupsData: any[]
+}) {
+  const [subTab, setSubTab] = useState<'matches' | 'rules'>('matches')
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 bg-gray-900 p-1 rounded-xl border border-gray-800 w-fit">
+        <button onClick={() => setSubTab('matches')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${subTab === 'matches' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+          Partidos
+        </button>
+        <button onClick={() => setSubTab('rules')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${subTab === 'rules' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+          Reglas de cruces
+        </button>
+      </div>
+      {subTab === 'matches' && (
+        <KnockoutSection token={token} tournamentId={tournamentId} tournament={tournament} />
+      )}
+      {subTab === 'rules' && (
+        <BracketRulesSection token={token} groups={groupsData} tournamentId={tournamentId} hasGroups={tournament?.hasGroups ?? true} />
+      )}
+    </div>
+  )
+}
+
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
 function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void; }) {
@@ -1057,12 +1098,11 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void; 
       )}
 
       {activeTab === 'bracket' && (
-        <section className="space-y-6">
-          <KnockoutSection token={token} tournamentId={tournamentId} tournament={tournament} />
-          <div className="border-t border-gray-800 pt-4 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Reglas de cruces</h2>
-            <BracketRulesSection token={token} groups={groupsData ?? []} tournamentId={tournamentId} />
-          </div>
+        <section className="space-y-4">
+          <BracketSubTabs
+            token={token} tournamentId={tournamentId} tournament={tournament}
+            groupsData={groupsData ?? []}
+          />
         </section>
       )}
     </div>
