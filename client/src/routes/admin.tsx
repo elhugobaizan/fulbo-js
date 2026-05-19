@@ -640,6 +640,8 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
 // ─── Knockout Section ─────────────────────────────────────────────────────────
 
 const ROUND_LABELS: Record<string, string> = {
+  round_of_64: '32avos de Final',
+  round_of_32: '16avos de Final',
   round_of_16: 'Octavos de Final',
   quarterfinal: 'Cuartos de Final',
   semifinal: 'Semifinales',
@@ -849,10 +851,11 @@ function KnockoutSection({ token, tournamentId, tournament }: { token: string; t
   // Determine which round to generate next
   const existingRounds = new Set(Object.keys(byRound))
   const nextRoundToGenerate = (() => {
-    if (!hasGroups) return null // manual for no-groups tournaments
+    // For no-groups: first round is manual, but subsequent rounds auto-generate
+    if (!hasGroups && existingRounds.size === 0) return null
     if (existingRounds.size === 0) return 'round_of_16'
     const lastRound = ROUND_ORDER.filter(r => existingRounds.has(r)).pop()
-    if (!lastRound) return 'round_of_16'
+    if (!lastRound) return null
     const lastRoundMatches = byRound[lastRound] ?? []
     const allFinished = lastRoundMatches.length > 0 && lastRoundMatches.every((m: any) => m.status === 'finished')
     if (!allFinished) return null

@@ -77,6 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'bracket-rules') {
       if (req.method === 'GET') {
         const tournamentId = Number(req.query.tournamentId)
+        if (!tournamentId || isNaN(tournamentId)) return ok(res, [])
         const rules = await db.select().from(bracketRules).where(eq(bracketRules.tournamentId, tournamentId))
         return ok(res, rules)
       }
@@ -290,88 +291,128 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return ok(res, updated)
     }
 
-    // generate knockout matches from bracket rules + standings
+    // generate knockout matches from bracket rules
     if (action === 'generate-knockout' && req.method === 'POST') {
-      const { tournamentId } = req.body
-      if (!tournamentId) return err(res, 'tournamentId required', 400)
+      const { tournamentId, round } = req.body
+      if (!tournamentId || !round) return err(res, 'tournamentId and round required', 400)
       const tid = Number(tournamentId)
 
-      // Check if matches already exist
+      // Check if matches for THIS round already exist
       const existing = await db.select().from(matches).where(
-        and(eq(matches.tournamentId, tid), eq(matches.phase, 'knockout'))
+        and(eq(matches.tournamentId, tid), eq(matches.phase, 'knockout'), eq(matches.knockoutRound as any, round))
       )
-      if (existing.length > 0) return err(res, 'Knockout matches already generated', 400)
+      if (existing.length > 0) return err(res, `Matches for ${round} already generated`, 400)
 
-      // Get bracket rules for round_of_16
+      // Get bracket rules for the requested round
       const rules = await db.select().from(bracketRules).where(
-        and(eq(bracketRules.tournamentId, tid), eq(bracketRules.knockoutRound as any, 'round_of_16'))
+        and(eq(bracketRules.tournamentId, tid), eq(bracketRules.knockoutRound as any, round))
       )
+      if (rules.length === 0) return err(res, `No bracket rules found for ${round}`, 400)
 
-      // Get groups with teams
-      const groupsData = await db.select().from(groups).where(eq(groups.tournamentId, tid))
-      const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
-        const members = await db.select({ teamId: groupTeams.teamId, team: teams })
-          .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id))
-          .where(eq(groupTeams.groupId, group.id))
-        return { ...group, members }
-      }))
+      // Get tournament to check hasGroups
+      const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tid))
+      if (!tournament) return err(res, 'Tournament not found', 404)
 
-      // Get all finished group matches
-      const allGroupMatches = await db.select().from(matches).where(
-        and(eq(matches.tournamentId, tid), eq(matches.phase, 'group'))
-      )
-
-      // Calculate standings per group
-      const standingsByGroup: Record<number, any[]> = {}
-      for (const group of groupsWithTeams) {
-        const gTeamIds = new Set(group.members.map((m: any) => m.teamId))
-        const relevant = allGroupMatches.filter((m: any) =>
-          m.status === 'finished' && (gTeamIds.has(m.homeTeamId) || gTeamIds.has(m.awayTeamId))
-        )
-        const stats: Record<number, any> = {}
-        for (const gt of group.members) {
-          stats[gt.teamId] = { teamId: gt.teamId, team: gt.team, played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, points: 0 }
-        }
-        for (const m of relevant) {
-          const hg = m.homeScore ?? 0, ag = m.awayScore ?? 0
-          if (m.homeTeamId && gTeamIds.has(m.homeTeamId)) {
-            const h = stats[m.homeTeamId]; h.played++; h.goalsFor += hg; h.goalsAgainst += ag
-            if (hg > ag) { h.won++; h.points += 3 } else if (hg < ag) h.lost++; else { h.drawn++; h.points++ }
-          }
-          if (m.awayTeamId && gTeamIds.has(m.awayTeamId)) {
-            const a = stats[m.awayTeamId]; a.played++; a.goalsFor += ag; a.goalsAgainst += hg
-            if (ag > hg) { a.won++; a.points += 3 } else if (ag < hg) a.lost++; else { a.drawn++; a.points++ }
-          }
-        }
-        standingsByGroup[group.id] = Object.values(stats).sort((a: any, b: any) => {
-          if (b.points !== a.points) return b.points - a.points
-          const da = a.goalsFor - a.goalsAgainst, db2 = b.goalsFor - b.goalsAgainst
-          if (db2 !== da) return db2 - da
-          return b.goalsFor - a.goalsFor
-        })
-      }
-
-      // Create matches from rules
       const created = []
-      for (const rule of rules.sort((a, b) => a.bracketPosition - b.bracketPosition)) {
-        const homeTeam = rule.homeGroupId !== null && rule.homePosition !== null
-          ? standingsByGroup[rule.homeGroupId]?.[rule.homePosition - 1]?.team ?? null
-          : null
-        const awayTeam = rule.awayGroupId !== null && rule.awayPosition !== null
-          ? standingsByGroup[rule.awayGroupId]?.[rule.awayPosition - 1]?.team ?? null
-          : null
 
-        const [match] = await db.insert(matches).values({
-          tournamentId: tid,
-          phase: 'knockout',
-          knockoutRound: 'round_of_16',
-          bracketPosition: rule.bracketPosition,
-          homeTeamId: homeTeam?.id ?? null,
-          awayTeamId: awayTeam?.id ?? null,
-          status: 'scheduled',
-          scheduledAt: null,
-        } as any).returning()
-        created.push(match)
+      if ((tournament as any).hasGroups) {
+        // For tournaments with groups: resolve first round from standings
+        const groupsData = await db.select().from(groups).where(eq(groups.tournamentId, tid))
+        const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
+          const members = await db.select({ teamId: groupTeams.teamId, team: teams })
+            .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id))
+            .where(eq(groupTeams.groupId, group.id))
+          return { ...group, members }
+        }))
+        const allGroupMatches = await db.select().from(matches).where(
+          and(eq(matches.tournamentId, tid), eq(matches.phase, 'group'))
+        )
+        const standingsByGroup: Record<number, any[]> = {}
+        for (const group of groupsWithTeams) {
+          const gTeamIds = new Set(group.members.map((m: any) => m.teamId))
+          const relevant = allGroupMatches.filter((m: any) =>
+            m.status === 'finished' && (gTeamIds.has(m.homeTeamId) || gTeamIds.has(m.awayTeamId))
+          )
+          const stats: Record<number, any> = {}
+          for (const gt of group.members) {
+            stats[gt.teamId] = { teamId: gt.teamId, team: gt.team, played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, points: 0 }
+          }
+          for (const m of relevant) {
+            const hg = m.homeScore ?? 0, ag = m.awayScore ?? 0
+            if (m.homeTeamId && gTeamIds.has(m.homeTeamId)) {
+              const h = stats[m.homeTeamId]; h.played++; h.goalsFor += hg; h.goalsAgainst += ag
+              if (hg > ag) { h.won++; h.points += 3 } else if (hg < ag) h.lost++; else { h.drawn++; h.points++ }
+            }
+            if (m.awayTeamId && gTeamIds.has(m.awayTeamId)) {
+              const a = stats[m.awayTeamId]; a.played++; a.goalsFor += ag; a.goalsAgainst += hg
+              if (ag > hg) { a.won++; a.points += 3 } else if (ag < hg) a.lost++; else { a.drawn++; a.points++ }
+            }
+          }
+          standingsByGroup[group.id] = Object.values(stats).sort((a: any, b: any) => {
+            if (b.points !== a.points) return b.points - a.points
+            const da = a.goalsFor - a.goalsAgainst, db2 = b.goalsFor - b.goalsAgainst
+            if (db2 !== da) return db2 - da
+            return b.goalsFor - a.goalsFor
+          })
+        }
+        for (const rule of rules.sort((a, b) => a.bracketPosition - b.bracketPosition)) {
+          const homeTeam = rule.homeGroupId !== null && rule.homePosition !== null
+            ? standingsByGroup[rule.homeGroupId]?.[rule.homePosition - 1]?.team ?? null : null
+          const awayTeam = rule.awayGroupId !== null && rule.awayPosition !== null
+            ? standingsByGroup[rule.awayGroupId]?.[rule.awayPosition - 1]?.team ?? null : null
+          const [match] = await db.insert(matches).values({
+            tournamentId: tid, phase: 'knockout', knockoutRound: round,
+            bracketPosition: rule.bracketPosition,
+            homeTeamId: homeTeam?.id ?? null, awayTeamId: awayTeam?.id ?? null,
+            status: 'scheduled', scheduledAt: null,
+          } as any).returning()
+          created.push(match)
+        }
+      } else {
+        // For no-groups tournaments: homeWinnerOf/awayWinnerOf are bracketRule IDs.
+        // Get ALL bracket rules for this tournament to build ruleId -> winner map.
+        const allRules = await db.select().from(bracketRules).where(eq(bracketRules.tournamentId, tid))
+        const ruleById: Record<number, any> = {}
+        for (const r of allRules) ruleById[r.id] = r
+
+        // Get all existing knockout matches for this tournament
+        const allKnockout = await db.select().from(matches).where(
+          and(eq(matches.tournamentId, tid), eq(matches.phase, 'knockout'))
+        )
+        // Map: bracketPosition+round -> match
+        const matchByRoundAndPos: Record<string, any> = {}
+        for (const m of allKnockout) {
+          if (m.bracketPosition !== null && m.knockoutRound) {
+            matchByRoundAndPos[`${m.knockoutRound}:${m.bracketPosition}`] = m
+          }
+        }
+
+        // Resolve winner of a bracketRule by its id
+        const resolveWinner = async (ruleId: number): Promise<any> => {
+          const rule = ruleById[ruleId]
+          if (!rule) return null
+          const match = matchByRoundAndPos[`${rule.knockoutRound}:${rule.bracketPosition}`]
+          if (!match || match.status !== 'finished') return null
+          const homeScore = (match.homeScore ?? 0) + (match.homePenalties ?? 0)
+          const awayScore = (match.awayScore ?? 0) + (match.awayPenalties ?? 0)
+          let winnerId: number | null = null
+          if (homeScore > awayScore) winnerId = match.homeTeamId
+          else if (awayScore > homeScore) winnerId = match.awayTeamId
+          if (!winnerId) return null
+          const [team] = await db.select().from(teams).where(eq(teams.id, winnerId))
+          return team ?? null
+        }
+        for (const rule of rules.sort((a, b) => a.bracketPosition - b.bracketPosition)) {
+          const homeTeam = rule.homeWinnerOf ? await resolveWinner(rule.homeWinnerOf) : null
+          const awayTeam = rule.awayWinnerOf ? await resolveWinner(rule.awayWinnerOf) : null
+          const [match] = await db.insert(matches).values({
+            tournamentId: tid, phase: 'knockout', knockoutRound: round,
+            bracketPosition: rule.bracketPosition,
+            homeTeamId: homeTeam?.id ?? null, awayTeamId: awayTeam?.id ?? null,
+            status: 'scheduled', scheduledAt: null,
+          } as any).returning()
+          created.push(match)
+        }
       }
 
       return ok(res, { created: created.length })

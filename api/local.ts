@@ -460,10 +460,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const teamsData = teamIds.length > 0 ? await db.select().from(teams).where(inArray(teams.id, teamIds)) : []
       const teamById = Object.fromEntries(teamsData.map((t: any) => [t.id, t]))
 
+      const matchIds = knockoutMatches.map((m: any) => m.id)
+      const eventsData = matchIds.length > 0
+        ? await db.select().from(matchEvents).where(inArray(matchEvents.matchId, matchIds))
+        : []
+      const eventCountByMatch: Record<number, number> = {}
+      for (const e of eventsData) {
+        eventCountByMatch[e.matchId] = (eventCountByMatch[e.matchId] ?? 0) + 1
+      }
+
       const enriched = knockoutMatches.map((m: any) => ({
         ...m,
         homeTeam: m.homeTeamId ? teamById[m.homeTeamId] : null,
         awayTeam: m.awayTeamId ? teamById[m.awayTeamId] : null,
+        eventCount: eventCountByMatch[m.id] ?? 0,
       }))
       return ok(res, enriched)
     }

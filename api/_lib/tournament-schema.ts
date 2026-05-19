@@ -36,6 +36,8 @@ export const KNOCKOUT_ROUNDS = [
 
 // ─── Tournaments ─────────────────────────────────────────────────────────────
 
+export const teamTypeEnum = pgEnum('team_type', ['club', 'national'])
+
 export const tournaments = pgTable('tournaments', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 100 }).notNull(),        // "Copa de la Liga 2025"
@@ -49,6 +51,7 @@ export const tournaments = pgTable('tournaments', {
   qualifiersPerGroup: integer('qualifiers_per_group').notNull().default(8),
   allowCrossGroup: boolean('allow_cross_group').default(false).notNull(),
   knockoutStarted: boolean('knockout_started').default(false).notNull(),
+  teamType: teamTypeEnum('team_type').notNull().default('club'),
 })
 
 // ─── Teams ───────────────────────────────────────────────────────────────────
@@ -61,6 +64,20 @@ export const teams = pgTable('teams', {
   logoUrl: varchar('logo_url', { length: 500 }),
   country: varchar('country', { length: 50 }),
   externalId: integer('external_id'),
+  color: varchar('color', { length: 6 }),
+  alternateColor: varchar('alternate_color', { length: 6 }),
+  createdAt: timestamp('created_at').defaultNow(),
+})
+
+// ─── National Teams ──────────────────────────────────────────────────────────
+// Selecciones nacionales (para torneos tipo Mundial, Copa América, etc.)
+
+export const nationalTeams = pgTable('national_teams', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),         // "Argentina"
+  fifaCode: varchar('fifa_code', { length: 3 }).notNull(),  // "ARG"
+  confederation: varchar('confederation', { length: 10 }),  // "CONMEBOL"
+  flagUrl: varchar('flag_url', { length: 500 }),
   color: varchar('color', { length: 6 }),
   alternateColor: varchar('alternate_color', { length: 6 }),
   createdAt: timestamp('created_at').defaultNow(),
@@ -83,7 +100,8 @@ export const groups = pgTable('groups', {
 export const groupTeams = pgTable('group_teams', {
   id: serial('id').primaryKey(),
   groupId: integer('group_id').notNull().references(() => groups.id),
-  teamId: integer('team_id').notNull().references(() => teams.id),
+  teamId: integer('team_id').references(() => teams.id),
+  nationalTeamId: integer('national_team_id').references(() => nationalTeams.id),
 }, (t) => ({
   uniq: unique().on(t.groupId, t.teamId),
 }))
@@ -107,7 +125,9 @@ export const matches = pgTable('matches', {
 
   // Equipos y resultado
   homeTeamId: integer('home_team_id').references(() => teams.id),
+  homeNationalTeamId: integer('home_national_team_id').references(() => nationalTeams.id),
   awayTeamId: integer('away_team_id').references(() => teams.id),
+  awayNationalTeamId: integer('away_national_team_id').references(() => nationalTeams.id),
   homeScore: integer('home_score'),
   awayScore: integer('away_score'),
 
@@ -161,6 +181,8 @@ export const bracketRules = pgTable('bracket_rules', {
 
 export type BracketRule = typeof bracketRules.$inferSelect
 export type NewBracketRule = typeof bracketRules.$inferInsert
+export type NationalTeam = typeof nationalTeams.$inferSelect
+export type NewNationalTeam = typeof nationalTeams.$inferInsert
 
 export const localPlayers = pgTable('local_players', {
   id: serial('id').primaryKey(),
