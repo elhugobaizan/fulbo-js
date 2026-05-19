@@ -105,18 +105,22 @@ function Steps({ current }: { current: number }) {
 
 // ─── Step 1: Tournament ───────────────────────────────────────────────────────
 
-function Step1({ token, onNext }: { token: string; onNext: (tournament: any) => void }) {
-  const [name, setName] = useState('')
-  const [shortName, setShortName] = useState('')
-  const [season, setSeason] = useState(String(new Date().getFullYear()))
-  const [country, setCountry] = useState('')
-  const [hasGroups, setHasGroups] = useState(true)
-  const [qualifiersPerGroup, setQualifiersPerGroup] = useState('8')
-  const [allowCrossGroup, setAllowCrossGroup] = useState(false)
-  const [teamType, setTeamType] = useState<'club' | 'national'>('club')
+function Step1({ token, existingTournament, onNext }: { token: string; existingTournament: any | null; onNext: (tournament: any) => void }) {
+  const t = existingTournament
+  const [name, setName] = useState(t?.name ?? '')
+  const [shortName, setShortName] = useState(t?.shortName ?? '')
+  const [season, setSeason] = useState(t?.season ? String(t.season) : String(new Date().getFullYear()))
+  const [country, setCountry] = useState(t?.country ?? '')
+  const [hasGroups, setHasGroups] = useState(t?.hasGroups ?? true)
+  const [qualifiersPerGroup, setQualifiersPerGroup] = useState(t?.qualifiersPerGroup ? String(t.qualifiersPerGroup) : '2')
+  const [wildcardQualifiers, setWildcardQualifiers] = useState(t?.wildcardQualifiers ? String(t.wildcardQualifiers) : '0')
+  const [allowCrossGroup, setAllowCrossGroup] = useState(t?.allowCrossGroup ?? false)
+  const [teamType, setTeamType] = useState<'club' | 'national'>((t?.teamType ?? t?.team_type ?? 'club') as 'club' | 'national')
+
+  const locked = !!existingTournament
 
   const mutation = useMutation<any, Error, void>({
-    mutationFn: () => createTournament(token, { name, shortName, country, season: Number(season), hasGroups, qualifiersPerGroup: Number(qualifiersPerGroup), allowCrossGroup, teamType }),
+    mutationFn: () => createTournament(token, { name, shortName, country, season: Number(season), hasGroups, qualifiersPerGroup: Number(qualifiersPerGroup), wildcardQualifiers: Number(wildcardQualifiers), allowCrossGroup, teamType }),
     onSuccess: (data) => onNext(data),
   })
 
@@ -125,24 +129,24 @@ function Step1({ token, onNext }: { token: string; onNext: (tournament: any) => 
       <div className="space-y-3">
         <div>
           <label className="text-xs text-gray-400 mb-1 block">Nombre completo *</label>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Liga Profesional 2026"
+          <input value={name} onChange={e => !locked && setName(e.target.value)} disabled={locked} placeholder="Liga Profesional 2026"
             className="w-full px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Nombre corto</label>
-            <input value={shortName} onChange={e => setShortName(e.target.value)} placeholder="LPF 2026"
+            <input value={shortName} onChange={e => !locked && setShortName(e.target.value)} disabled={locked} placeholder="LPF 2026"
               className="w-full px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
           </div>
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Temporada *</label>
-            <input type="number" value={season} onChange={e => setSeason(e.target.value)}
+            <input type="number" value={season} onChange={e => !locked && setSeason(e.target.value)} disabled={locked}
               className="w-full px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
           </div>
         </div>
         <div>
           <label className="text-xs text-gray-400 mb-1 block">País</label>
-          <input value={country} onChange={e => setCountry(e.target.value)} placeholder="Argentina, Mundial..."
+          <input value={country} onChange={e => !locked && setCountry(e.target.value)} disabled={locked} placeholder="Argentina, Mundial..."
             className="w-full px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
         </div>
         <div>
@@ -164,10 +168,17 @@ function Step1({ token, onNext }: { token: string; onNext: (tournament: any) => 
         </div>
         {hasGroups && (
           <>
-            <div>
-              <label className="text-xs text-gray-400 mb-1 block">Clasificados por grupo</label>
-              <input type="number" min="1" value={qualifiersPerGroup} onChange={e => setQualifiersPerGroup(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Clasificados por grupo</label>
+                <input type="number" min="1" value={qualifiersPerGroup} onChange={e => setQualifiersPerGroup(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Wildcards (mejores del puesto siguiente)</label>
+                <input type="number" min="0" value={wildcardQualifiers} onChange={e => setWildcardQualifiers(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
+              </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-800/50 border border-gray-700">
               <input type="checkbox" id="allowCrossGroup" checked={allowCrossGroup} onChange={e => setAllowCrossGroup(e.target.checked)} className="w-4 h-4 accent-[#74ACDF]" />
@@ -179,8 +190,15 @@ function Step1({ token, onNext }: { token: string; onNext: (tournament: any) => 
           </>
         )}
       </div>
+      {locked && (
+        <p className="text-xs text-yellow-500/80 bg-yellow-950/30 border border-yellow-800/40 rounded-xl px-3 py-2">
+          El torneo ya fue creado. Los datos no se pueden modificar.
+        </p>
+      )}
       {mutation.isError && <p className="text-red-400 text-sm">Error al crear el torneo</p>}
-      <button onClick={() => mutation.mutate()} disabled={!name || !season || mutation.isPending}
+      <button
+        onClick={() => locked ? onNext(existingTournament) : mutation.mutate()}
+        disabled={!locked && (!name || !season || mutation.isPending)}
         className="w-full py-2.5 rounded-xl bg-[#74ACDF] text-gray-950 font-semibold hover:bg-[#5a9fd4] transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
         {mutation.isPending ? 'Creando...' : <><span>Siguiente</span><ChevronRight size={16} /></>}
       </button>
@@ -796,7 +814,7 @@ function SetupPage() {
   }
 
   const handleCancel = () => {
-    clearWizard()
+    // Don't clearWizard — tournament already in DB, user can resume later
     navigate({ to: '/admin' })
   }
 
@@ -854,7 +872,7 @@ function SetupPage() {
 
       <div className="bg-gray-900/50 rounded-2xl border border-gray-800 p-6">
         {step === 0 && (
-          <Step1 token={token} onNext={(t) => update({ tournament: t, step: t.hasGroups ? 1 : 3 })} />
+          <Step1 token={token} existingTournament={tournament} onNext={(t) => update({ tournament: t, step: (t.hasGroups === true || t.hasGroups === 'true' || t.has_groups === true) ? 1 : 3 })} />
         )}
         {step === 1 && tournament && (
           <Step2

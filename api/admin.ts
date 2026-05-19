@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, sql } from 'drizzle-orm'
 import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents, matchLineups, nationalTeams } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
 
@@ -96,9 +96,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // setup
     if (action === 'setup-tournament' && req.method === 'POST') {
-      const { name, shortName, country, season, hasGroups, qualifiersPerGroup, allowCrossGroup, teamType } = req.body
+      const { name, shortName, country, season, hasGroups, qualifiersPerGroup, wildcardQualifiers, allowCrossGroup, teamType } = req.body
       if (!name || !season) return err(res, 'name and season required', 400)
-      const [tournament] = await db.insert(tournaments).values({ name, shortName: shortName ?? null, country: country ?? null, season: Number(season), hasGroups: hasGroups ?? true, qualifiersPerGroup: Number(qualifiersPerGroup) || 8, allowCrossGroup: allowCrossGroup ?? false, teamType: teamType ?? 'club', active: true }).returning()
+      const [inserted] = await db.insert(tournaments).values({ name, shortName: shortName ?? null, country: country ?? null, season: Number(season), hasGroups: hasGroups ?? true, qualifiersPerGroup: Number(qualifiersPerGroup) || 2, wildcardQualifiers: Number(wildcardQualifiers) || 0, allowCrossGroup: allowCrossGroup ?? false, teamType: teamType ?? 'club', active: true }).returning()
+      // Raw select to include columns added via ALTER TABLE (e.g. team_type, wildcard_qualifiers)
+      const db2 = getDb()
+      const rows = await db2.execute(sql`SELECT * FROM tournaments WHERE id = ${inserted.id}`)
+      const tournament = (rows as any).rows?.[0] ?? inserted
+      // Normalize snake_case to camelCase for new columns
+      if (tournament.team_type !== undefined && tournament.teamType === undefined) tournament.teamType = tournament.team_type
+      if (tournament.wildcard_qualifiers !== undefined && tournament.wildcardQualifiers === undefined) tournament.wildcardQualifiers = tournament.wildcard_qualifiers
       return res.status(201).json({ data: tournament })
     }
 
@@ -330,7 +337,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // generate knockout matches from bracket rules + standings
     if (action === 'generate-knockout' && req.method === 'POST') {
-      const { tournamentId } = req.body
+      const { tournamentId, round } = req.body
+      if (!tournamentId || !round) return err(res, 'tournamentId and round required', 400)
       if (!tournamentId) return err(res, 'tournamentId required', 400)
       const tid = Number(tournamentId)
 
@@ -346,6 +354,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       )
 
       // Get groups with teams
+      const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tid))
+      if (!tournament) return err(res, 'Tournament not found', 404)
       const groupsData = await db.select().from(groups).where(eq(groups.tournamentId, tid))
       const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
         const members = await db.select({ teamId: groupTeams.teamId, team: teams })
@@ -390,20 +400,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         })
       }
 
-      // Create matches from rules
+      // Build ranked wildcards (best teams at position qualifiersPerGroup+1 across all groups)
+      const wildcardQualifiers = (tournament as any).wildcardQualifiers ?? 0
+      const qualifiersPerGroup = (tournament as any).qualifiersPerGroup ?? 2
+      const wildcardPos = qualifiersPerGroup // 0-indexed: position after last auto-qualifier
+      const wildcardRanked: any[] = []
+      if (wildcardQualifiers > 0) {
+        for (const standing of Object.values(standingsByGroup)) {
+          const wildcard = (standing as any[])[wildcardPos]
+          if (wildcard) wildcardRanked.push(wildcard)
+        }
+        wildcardRanked.sort((a: any, b: any) => {
+          if (b.points !== a.points) return b.points - a.points
+          const da = a.goalsFor - a.goalsAgainst, db2 = b.goalsFor - b.goalsAgainst
+          if (db2 !== da) return db2 - da
+          if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor
+          return 0
+        })
+        // Keep only the best N wildcards
+        wildcardRanked.splice(wildcardQualifiers)
+      }
+
+      // wildcardIndex tracks which wildcard slot we're filling (by bracketPosition order)
+      let wildcardIndex = 0
+
+      const resolveTeam = (groupId: number | null, position: number | null) => {
+        if (groupId === null || position === null) return null
+        // position 0 = wildcard slot
+        if (position === 0) {
+          const wc = wildcardRanked[wildcardIndex++] ?? null
+          return wc?.team ?? null
+        }
+        return standingsByGroup[groupId]?.[position - 1]?.team ?? null
+      }
+
       const created = []
       for (const rule of rules.sort((a, b) => a.bracketPosition - b.bracketPosition)) {
-        const homeTeam = rule.homeGroupId !== null && rule.homePosition !== null
-          ? standingsByGroup[rule.homeGroupId]?.[rule.homePosition - 1]?.team ?? null
-          : null
-        const awayTeam = rule.awayGroupId !== null && rule.awayPosition !== null
-          ? standingsByGroup[rule.awayGroupId]?.[rule.awayPosition - 1]?.team ?? null
-          : null
+        const homeTeam = resolveTeam(rule.homeGroupId, rule.homePosition)
+        const awayTeam = resolveTeam(rule.awayGroupId, rule.awayPosition)
 
         const [match] = await db.insert(matches).values({
           tournamentId: tid,
           phase: 'knockout',
-          knockoutRound: 'round_of_16',
+          knockoutRound: round,
           bracketPosition: rule.bracketPosition,
           homeTeamId: homeTeam?.id ?? null,
           awayTeamId: awayTeam?.id ?? null,
