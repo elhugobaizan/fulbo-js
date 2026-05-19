@@ -36,8 +36,6 @@ export const KNOCKOUT_ROUNDS = [
 
 // ─── Tournaments ─────────────────────────────────────────────────────────────
 
-export const teamTypeEnum = pgEnum('team_type', ['club', 'national'])
-
 export const tournaments = pgTable('tournaments', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 100 }).notNull(),        // "Copa de la Liga 2025"
@@ -51,7 +49,7 @@ export const tournaments = pgTable('tournaments', {
   qualifiersPerGroup: integer('qualifiers_per_group').notNull().default(8),
   allowCrossGroup: boolean('allow_cross_group').default(false).notNull(),
   knockoutStarted: boolean('knockout_started').default(false).notNull(),
-  teamType: teamTypeEnum('team_type').notNull().default('club'),
+  teamType: varchar('team_type', { length: 10 }).notNull().default('club'),
 })
 
 // ─── Teams ───────────────────────────────────────────────────────────────────
