@@ -16,7 +16,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       </div>
 
       {/* Contenido principal */}
-      <main className="flex-1 container mx-auto px-4 py-6 max-w-6xl pb-24 md:pb-6">
+      <main className="flex-1 container mx-auto px-4 py-6 max-w-screen-2xl pb-24 md:pb-6">
         <Outlet />
       </main>
 

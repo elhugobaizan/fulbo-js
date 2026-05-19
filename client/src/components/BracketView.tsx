@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { apiClient } from '../lib/api'
-import type { Bracket, BracketSlot } from '../hooks/useBracket'
+import { useNavigate } from '@tanstack/react-router'
+import type { BracketSlot } from '../hooks/useBracket'
 
 const ROUND_LABELS: Record<string, string> = {
   round_of_64: '32avos',
@@ -13,122 +14,103 @@ const ROUND_LABELS: Record<string, string> = {
   final: 'Final',
 }
 
+const ROUND_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'final']
+
+const CARD_W = 160
+const CARD_H = 70
+const COL_GAP = 24 // horizontal gap between columns
+
 // ─── Match Card ───────────────────────────────────────────────────────────────
 
-function MatchCard({ slot, onEdit, compact = false }: { slot: BracketSlot; onEdit: () => void; compact?: boolean }) {
+function MatchCard({ slot, onEdit, isFinal = false }: { slot: BracketSlot; onEdit: () => void; isFinal?: boolean }) {
+  const navigate = useNavigate()
   const match = slot.match
   const isFinished = match?.status === 'finished'
-
+  const hasTeams = slot.homeTeam && slot.awayTeam
+  const canEdit = hasTeams && !isFinished && !!match?.scheduledAt
   const homeWon = isFinished && match && (
     match.homePenalties !== null
       ? match.homePenalties > (match.awayPenalties ?? 0)
       : (match.homeScore ?? 0) > (match.awayScore ?? 0)
   )
-  const awayWon = isFinished && !homeWon
+  const awayWon = isFinished && match && !homeWon
 
   const dateStr = !isFinished && match?.scheduledAt
-    ? (() => { const [, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return { day: d, month: new Date(2000, m - 1, 1).toLocaleDateString('es-AR', { month: 'short' }) } })()
+    ? (() => {
+      const [, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number)
+      return new Date(2000, m - 1, d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+    })()
     : null
+
+  const handleClick = () => {
+    if (isFinished && match?.id) {
+      navigate({ to: '/match/$matchId', params: { matchId: String(match.id) } })
+    } else if (canEdit) {
+      onEdit()
+    }
+  }
 
   return (
     <button
-      onClick={onEdit}
-      style={{ minWidth: compact ? 140 : 160 }}
-      className={`
-        w-full rounded-xl border overflow-hidden transition-all text-left
-        ${isFinished ? 'border-gray-700 bg-gray-900/60' : 'border-dashed border-gray-700 bg-gray-900/30 hover:border-gray-500'}
-      `}
+      onClick={handleClick}
+      style={{ width: CARD_W }}
+      className={`rounded-xl border overflow-hidden transition-all text-left flex-shrink-0 ${isFinal
+          ? 'border-yellow-600/60 bg-yellow-950/20 hover:border-yellow-500'
+          : isFinished
+            ? 'border-gray-700 bg-gray-900/60 hover:bg-gray-900/80'
+            : canEdit
+              ? 'border-dashed border-gray-700 bg-gray-900/30 hover:border-gray-500'
+              : 'border-dashed border-gray-800 bg-gray-900/10 cursor-default opacity-60 hover:border-gray-600 hover:bg-gray-800/30 hover:opacity-80'
+        }`}
     >
-      <div className="flex items-stretch">
-        {/* Date column */}
-        {dateStr && (
-          <div className="flex flex-col items-center justify-center px-1.5 border-r border-gray-800 min-w-[28px]">
-            <span className="text-[9px] text-gray-500 capitalize leading-none">{dateStr.month}</span>
-            <span className="text-xs font-bold text-gray-400 leading-none mt-0.5">{dateStr.day}</span>
-          </div>
-        )}
-        {/* Teams column */}
-        <div className="flex-1 min-w-0">
-          <div className={`flex items-center gap-1.5 px-2.5 py-2 ${homeWon ? 'bg-gray-700/60' : ''}`}>
-            {slot.homeTeam?.logoUrl
-              ? <img src={slot.homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
-              : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />
-            }
-            <span className={`text-xs flex-1 truncate ${homeWon ? 'text-white font-medium' : 'text-gray-300'}`}>
-              {slot.homeLabel}
-            </span>
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              {match?.homePenalties != null && (
-                <span className="text-[9px] text-yellow-400">({match.homePenalties})</span>
-              )}
-              <span className={`text-xs font-bold w-4 text-center ${homeWon ? 'text-white' : 'text-gray-500'}`}>
-                {isFinished ? match?.homeScore ?? 0 : ''}
-              </span>
-            </div>
-          </div>
-          <div className="h-px bg-gray-800" />
-          <div className={`flex items-center gap-1.5 px-2.5 py-2 ${awayWon ? 'bg-gray-700/60' : ''}`}>
-            {slot.awayTeam?.logoUrl
-              ? <img src={slot.awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
-              : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />
-            }
-            <span className={`text-xs flex-1 truncate ${awayWon ? 'text-white font-medium' : 'text-gray-300'}`}>
-              {slot.awayLabel}
-            </span>
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              {match?.awayPenalties != null && (
-                <span className="text-[9px] text-yellow-400">({match.awayPenalties})</span>
-              )}
-              <span className={`text-xs font-bold w-4 text-center ${awayWon ? 'text-white' : 'text-gray-500'}`}>
-                {isFinished ? match?.awayScore ?? 0 : ''}
-              </span>
-            </div>
-          </div>
-        </div>
+      <div className={`flex items-center gap-1.5 px-2.5 py-2 ${homeWon ? 'bg-gray-700/60' : ''}`}>
+        {slot.homeTeam?.logoUrl
+          ? <img src={slot.homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+          : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
+        <span className={`text-xs flex-1 truncate ${homeWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.homeLabel}</span>
+        <span className={`text-xs font-bold ${homeWon ? 'text-white' : 'text-gray-500'}`}>{isFinished ? match?.homeScore ?? 0 : ''}</span>
       </div>
+      <div className="h-px bg-gray-800" />
+      <div className={`flex items-center gap-1.5 px-2.5 py-2 ${awayWon ? 'bg-gray-700/60' : ''}`}>
+        {slot.awayTeam?.logoUrl
+          ? <img src={slot.awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+          : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
+        <span className={`text-xs flex-1 truncate ${awayWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.awayLabel}</span>
+        <span className={`text-xs font-bold ${awayWon ? 'text-white' : 'text-gray-500'}`}>{isFinished ? match?.awayScore ?? 0 : ''}</span>
+      </div>
+      {dateStr && (
+        <div className="px-2.5 py-1 border-t border-gray-800/60">
+          <span className="text-[10px] text-gray-500 capitalize">{dateStr}</span>
+        </div>
+      )}
     </button>
   )
 }
 
 // ─── Result Modal ─────────────────────────────────────────────────────────────
 
-async function createOrUpdateKnockoutMatch(token: string, slot: BracketSlot, homeScore: number, awayScore: number, homePen: number | null, awayPen: number | null) {
-  if (slot.match) {
-    const { data } = await apiClient.patch('/admin?action=matches', {
-      matchId: slot.match.id, homeScore, awayScore,
-      homePenalties: homePen, awayPenalties: awayPen, status: 'finished',
-    }, { headers: { 'x-admin-token': token } })
-    return data.data
-  } else {
-    const { data } = await apiClient.post('/admin?action=matches', {
-      tournamentId: 1, phase: 'knockout',
-      knockoutRound: slot.knockoutRound, bracketPosition: slot.bracketPosition,
-      homeTeamId: slot.homeTeam?.id, awayTeamId: slot.awayTeam?.id,
-      homeScore, awayScore, homePenalties: homePen, awayPenalties: awayPen, status: 'finished',
-    }, { headers: { 'x-admin-token': token } })
-    return data.data
-  }
-}
-
-const STORAGE_KEY = 'futbol-ar:admin-token'
-
 function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void }) {
+  const STORAGE_KEY = 'futbol-ar:admin-token'
   const token = sessionStorage.getItem(STORAGE_KEY) ?? ''
   const [homeScore, setHomeScore] = useState(String(slot.match?.homeScore ?? ''))
   const [awayScore, setAwayScore] = useState(String(slot.match?.awayScore ?? ''))
   const [homePen, setHomePen] = useState(String(slot.match?.homePenalties ?? ''))
   const [awayPen, setAwayPen] = useState(String(slot.match?.awayPenalties ?? ''))
   const queryClient = useQueryClient()
-
   const showPenalties = homeScore !== '' && awayScore !== '' && Number(homeScore) === Number(awayScore)
-  const teamsResolved = slot.homeTeam !== null && slot.awayTeam !== null
 
-  const saveMutation = useMutation<any, Error, void>({
-    mutationFn: () => createOrUpdateKnockoutMatch(
-      token, slot, Number(homeScore), Number(awayScore),
-      showPenalties && homePen !== '' ? Number(homePen) : null,
-      showPenalties && awayPen !== '' ? Number(awayPen) : null,
-    ),
+  const saveMutation = useMutation<void, Error, void>({
+    mutationFn: async () => {
+      const t = token || sessionStorage.getItem(STORAGE_KEY) || ''
+      if (slot.match?.id) {
+        await apiClient.patch('/admin?action=matches', {
+          matchId: slot.match.id, homeScore: Number(homeScore), awayScore: Number(awayScore),
+          homePenalties: showPenalties && homePen !== '' ? Number(homePen) : null,
+          awayPenalties: showPenalties && awayPen !== '' ? Number(awayPen) : null,
+          status: 'finished',
+        }, { headers: { 'x-admin-token': t } })
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bracket'] })
       queryClient.invalidateQueries({ queryKey: ['knockout-fixtures'] })
@@ -139,258 +121,277 @@ function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={onClose} />
-      <div className="fixed top-1/2 left-1/2 z-50 bg-gray-900 rounded-xl border border-gray-800 w-full max-w-sm p-6 space-y-4"
-        style={{ transform: 'translate(-50%, -50%)' }}>
-        <h3 className="font-bold text-white">{ROUND_LABELS[slot.knockoutRound]} · Cruce {slot.bracketPosition}</h3>
-        <div className="text-sm text-center space-y-1">
-          <p className="text-white font-medium">{slot.homeLabel}</p>
-          <p className="text-gray-500 text-xs">vs</p>
-          <p className="text-white font-medium">{slot.awayLabel}</p>
-        </div>
-
-        {!teamsResolved ? (
-          <p className="text-gray-400 text-sm text-center py-2">Los equipos todavía no están definidos.</p>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-white flex-1 text-right truncate">{slot.homeLabel}</span>
-              <div className="flex items-center gap-2">
-                <input type="number" min="0" value={homeScore} onChange={(e) => setHomeScore(e.target.value)}
-                  className="w-14 text-center py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white font-bold text-lg focus:outline-none focus:border-[#74ACDF]" autoFocus />
-                <span className="text-gray-500 font-bold">-</span>
-                <input type="number" min="0" value={awayScore} onChange={(e) => setAwayScore(e.target.value)}
-                  className="w-14 text-center py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white font-bold text-lg focus:outline-none focus:border-[#74ACDF]" />
-              </div>
-              <span className="text-sm text-white flex-1 truncate">{slot.awayLabel}</span>
+      <div className="fixed inset-0 bg-black/60 z-50" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div className="bg-gray-900 rounded-xl border border-gray-800 w-full max-w-xs pointer-events-auto p-5 space-y-4" onClick={e => e.stopPropagation()}>
+          <h3 className="font-bold text-white">{ROUND_LABELS[slot.knockoutRound]} · Cruce {slot.bracketPosition}</h3>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-white flex-1 text-right truncate">{slot.homeLabel}</span>
+            <div className="flex items-center gap-2">
+              <input type="number" min="0" value={homeScore} onChange={e => setHomeScore(e.target.value)}
+                className="w-12 text-center py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white font-bold text-lg focus:outline-none focus:border-[#74ACDF]" autoFocus />
+              <span className="text-gray-500">-</span>
+              <input type="number" min="0" value={awayScore} onChange={e => setAwayScore(e.target.value)}
+                className="w-12 text-center py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white font-bold text-lg focus:outline-none focus:border-[#74ACDF]" />
             </div>
-            {showPenalties && (
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 flex-1 text-right">Penales</span>
-                <div className="flex items-center gap-2">
-                  <input type="number" min="0" value={homePen} onChange={(e) => setHomePen(e.target.value)}
-                    className="w-14 text-center py-1 rounded-lg bg-gray-800 border border-yellow-600/50 text-yellow-400 font-bold focus:outline-none" />
-                  <span className="text-gray-500">-</span>
-                  <input type="number" min="0" value={awayPen} onChange={(e) => setAwayPen(e.target.value)}
-                    className="w-14 text-center py-1 rounded-lg bg-gray-800 border border-yellow-600/50 text-yellow-400 font-bold focus:outline-none" />
-                </div>
-                <span className="flex-1" />
-              </div>
-            )}
-            <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || homeScore === '' || awayScore === ''}
-              className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
-              <Check size={14} />{saveMutation.isPending ? 'Guardando...' : 'Guardar resultado'}
-            </button>
+            <span className="text-sm text-white flex-1 truncate">{slot.awayLabel}</span>
           </div>
-        )}
+          {showPenalties && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400 flex-1 text-right">Penales</span>
+              <div className="flex items-center gap-2">
+                <input type="number" min="0" value={homePen} onChange={e => setHomePen(e.target.value)}
+                  className="w-12 text-center py-1 rounded-lg bg-gray-800 border border-yellow-600/50 text-yellow-400 font-bold focus:outline-none" />
+                <span className="text-gray-500">-</span>
+                <input type="number" min="0" value={awayPen} onChange={e => setAwayPen(e.target.value)}
+                  className="w-12 text-center py-1 rounded-lg bg-gray-800 border border-yellow-600/50 text-yellow-400 font-bold focus:outline-none" />
+              </div>
+              <span className="flex-1" />
+            </div>
+          )}
+          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || homeScore === '' || awayScore === ''}
+            className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+            <Check size={14} />{saveMutation.isPending ? 'Guardando...' : 'Guardar resultado'}
+          </button>
+        </div>
       </div>
     </>
   )
 }
 
+// ─── Dynamic Bracket (CSS absolute positioning) ───────────────────────────────
 
-// ─── Desktop tree bracket ─────────────────────────────────────────────────────
-// Layout:
-// Octavos 1 ─┐
-//             ├─ Cuartos 1 ─┐
-// Octavos 8 ─┘              │
-//                            ├─ Semi 1 ─┐
-// Octavos 4 ─┐              │           │
-//             ├─ Cuartos 2 ─┘           ├─ Final
-// Octavos 5 ─┘                          │
-//                            ├─ Semi 2 ─┘
-// Octavos 2 ─┐              │
-//             ├─ Cuartos 3 ─┘
-// Octavos 7 ─┘
-// Octavos 3 ─┐
-//             ├─ Cuartos 4 ─┘
-// Octavos 6 ─┘
+function DynamicBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: BracketSlot) => void }) {
+  const rounds = ROUND_ORDER.filter(r => (bracket[r] ?? []).length > 0)
+  if (rounds.length === 0) return null
 
-function DesktopBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: BracketSlot) => void }) {
-  const r16 = bracket.round_of_16 ?? []
-  const qf = bracket.quarterfinal ?? []
-  const sf = bracket.semifinal ?? []
-  const fin = bracket.final ?? []
+  const firstRound = rounds[0]
+  const firstRoundSlots = (bracket[firstRound] ?? []) as BracketSlot[]
+  const totalSlots = firstRoundSlots.length
+  const half = totalSlots / 2
 
-  // Mapas por bracketPosition
-  const r16m = Object.fromEntries(r16.map((s: BracketSlot) => [s.bracketPosition, s]))
-  const qfm = Object.fromEntries(qf.map((s: BracketSlot) => [s.bracketPosition, s]))
-  const sfm = Object.fromEntries(sf.map((s: BracketSlot) => [s.bracketPosition, s]))
-  const finm = fin[0] ?? null
+  // Determine left/right split using next round rules
+  const nextRound = rounds[1]
+  const nextSlots = nextRound ? [...(bracket[nextRound] ?? [])] as BracketSlot[] : []
+  const nextSorted = nextSlots.sort((a, b) => a.bracketPosition - b.bracketPosition)
+  const halfNext = Math.ceil(nextSorted.length / 2)
 
-  // Grupos de cruces: [octavos top, octavos bottom] → cuarto
-  const groups = [
-    { r16top: 1, r16bot: 8, qf: 1, sf: 1 },
-    { r16top: 4, r16bot: 5, qf: 2, sf: 1 },
-    { r16top: 2, r16bot: 7, qf: 3, sf: 2 },
-    { r16top: 3, r16bot: 6, qf: 4, sf: 2 },
-  ]
+  let leftPositions: Set<number>
+  let rightPositions: Set<number>
 
-  const SlotOrEmpty = ({ slot }: { slot: BracketSlot | undefined }) =>
-    slot ? <MatchCard slot={slot} onEdit={() => onEdit(slot)} compact /> : (
-      <div className="rounded-xl border border-dashed border-gray-800 bg-gray-900/20 p-4 text-center" style={{ minWidth: 140 }}>
-        <span className="text-xs text-gray-700">Sin cruce</span>
-      </div>
-    )
+  if (nextSorted.length > 0) {
+    leftPositions = new Set()
+    rightPositions = new Set()
+    nextSorted.forEach((s, i) => {
+      const hp = (s as any).homeWinnerOfPosition
+      const ap = (s as any).awayWinnerOfPosition
+      if (i < halfNext) {
+        if (hp) leftPositions.add(hp)
+        if (ap) leftPositions.add(ap)
+      } else {
+        if (hp) rightPositions.add(hp)
+        if (ap) rightPositions.add(ap)
+      }
+    })
+  } else {
+    leftPositions = new Set(firstRoundSlots.filter(s => s.bracketPosition <= half).map(s => s.bracketPosition))
+    rightPositions = new Set(firstRoundSlots.filter(s => s.bracketPosition > half).map(s => s.bracketPosition))
+  }
 
-  // Conectores SVG entre columnas
-  const CARD_H = 66 // altura aprox de cada card
-  const GAP = 8     // gap entre cards del mismo grupo
+  // Order first round slots for left/right
+  function orderSlots(slots: BracketSlot[], isLeft: boolean): BracketSlot[] {
+    if (nextSorted.length === 0) return [...slots].sort((a, b) => a.bracketPosition - b.bracketPosition)
+    const relevant = isLeft ? nextSorted.slice(0, halfNext) : nextSorted.slice(halfNext)
+    const ordered: BracketSlot[] = []
+    const used = new Set<number>()
+    for (const next of relevant) {
+      const hp = (next as any).homeWinnerOfPosition
+      const ap = (next as any).awayWinnerOfPosition
+      const hs = slots.find(s => s.bracketPosition === hp)
+      const as_ = slots.find(s => s.bracketPosition === ap)
+      if (hs && !used.has(hs.bracketPosition)) { ordered.push(hs); used.add(hs.bracketPosition) }
+      if (as_ && !used.has(as_.bracketPosition)) { ordered.push(as_); used.add(as_.bracketPosition) }
+    }
+    for (const s of [...slots].sort((a, b) => a.bracketPosition - b.bracketPosition)) {
+      if (!used.has(s.bracketPosition)) ordered.push(s)
+    }
+    return ordered
+  }
+
+  // Build Y positions for each slot using averaging from previous round
+  // Key: `${round}:${bracketPosition}` → Y center
+  const yMap: Record<string, number> = {}
+  const ROW_H = CARD_H + 10 // card + gap
+
+  // First round: evenly spaced
+  const leftFirst = orderSlots(firstRoundSlots.filter(s => leftPositions.has(s.bracketPosition)), true)
+  const rightFirst = orderSlots(firstRoundSlots.filter(s => rightPositions.has(s.bracketPosition)), false)
+
+  leftFirst.forEach((slot, i) => {
+    yMap[`${firstRound}:${slot.bracketPosition}`] = i * ROW_H
+  })
+  rightFirst.forEach((slot, i) => {
+    yMap[`${firstRound}:${slot.bracketPosition}`] = i * ROW_H
+  })
+
+  // Subsequent rounds: Y = average of the two feeders
+  const sideRounds = rounds.filter(r => r !== 'final')
+  for (let ri = 1; ri < sideRounds.length; ri++) {
+    const round = sideRounds[ri]
+    const slots = (bracket[round] ?? []) as BracketSlot[]
+    for (const slot of slots) {
+      const hp = (slot as any).homeWinnerOfPosition
+      const ap = (slot as any).awayWinnerOfPosition
+      const hRound = (slot as any).homeWinnerOfRound ?? sideRounds[ri - 1]
+      const aRound = (slot as any).awayWinnerOfRound ?? sideRounds[ri - 1]
+      const y1 = hp !== null ? yMap[`${hRound}:${hp}`] : undefined
+      const y2 = ap !== null ? yMap[`${aRound}:${ap}`] : undefined
+      if (y1 !== undefined && y2 !== undefined) {
+        yMap[`${round}:${slot.bracketPosition}`] = (y1 + y2) / 2
+      } else if (y1 !== undefined) {
+        yMap[`${round}:${slot.bracketPosition}`] = y1
+      } else if (y2 !== undefined) {
+        yMap[`${round}:${slot.bracketPosition}`] = y2
+      } else {
+        yMap[`${round}:${slot.bracketPosition}`] = 0
+      }
+    }
+  }
+
+  // Build left/right position sets for ALL rounds by tracing back through rules
+  const leftPosByRound: Record<string, Set<number>> = { [firstRound]: leftPositions }
+  const rightPosByRound: Record<string, Set<number>> = { [firstRound]: rightPositions }
+
+  for (let ri = 1; ri < sideRounds.length; ri++) {
+    const round = sideRounds[ri]
+    const slots = (bracket[round] ?? []) as BracketSlot[]
+    const leftSet = new Set<number>()
+    const rightSet = new Set<number>()
+    const prevRound = sideRounds[ri - 1]
+    const prevLeft = leftPosByRound[prevRound]
+    const prevRight = rightPosByRound[prevRound]
+    for (const slot of slots) {
+      const hp = (slot as any).homeWinnerOfPosition
+      const ap = (slot as any).awayWinnerOfPosition
+      // A slot is on the left if its feeders are on the left
+      const feederLeft = (hp && prevLeft?.has(hp)) || (ap && prevLeft?.has(ap))
+      const feederRight = (hp && prevRight?.has(hp)) || (ap && prevRight?.has(ap))
+      if (feederLeft) leftSet.add(slot.bracketPosition)
+      else if (feederRight) rightSet.add(slot.bracketPosition)
+    }
+    leftPosByRound[round] = leftSet
+    rightPosByRound[round] = rightSet
+  }
+
+  const totalH = half * ROW_H
+
+  // Column X positions
+  // Left: col 0 = first round, col 1 = second round, ...
+  // Right: mirrored, col 0 (first round) = rightmost
+  // Center: final
+  const numSideRounds = sideRounds.length
+  const totalW = numSideRounds * 2 * (CARD_W + COL_GAP) + CARD_W
+
+  function leftX(ri: number) { return ri * (CARD_W + COL_GAP) }
+  function rightX(ri: number) { return totalW - CARD_W - ri * (CARD_W + COL_GAP) }
+  const finalX = numSideRounds * (CARD_W + COL_GAP)
+
+  // Final Y = average of the two semi Y positions
+  const sfRound = sideRounds[sideRounds.length - 1]
+  const sfSlots = sfRound ? (bracket[sfRound] ?? []) as BracketSlot[] : []
+  const sfYs = sfSlots.map(s => yMap[`${sfRound}:${s.bracketPosition}`]).filter(y => y !== undefined)
+  const finalY = sfYs.length > 0 ? sfYs.reduce((a, b) => a + b, 0) / sfYs.length : totalH / 2 - CARD_H / 2
 
   return (
-    <div className="overflow-x-auto pb-4">
-      <div className="flex gap-0 items-stretch" style={{ minWidth: 720 }}>
-
-        {/* Octavos */}
-        <div className="flex flex-col gap-2" style={{ width: 164 }}>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-center mb-1">Octavos</p>
-          {groups.map(({ r16top, r16bot }, i) => (
-            <div key={i} className="flex flex-col gap-2">
-              <SlotOrEmpty slot={r16m[r16top]} />
-              <SlotOrEmpty slot={r16m[r16bot]} />
-              {i < groups.length - 1 && <div className="h-2" />}
-            </div>
-          ))}
-        </div>
-
-        {/* Conectores octavos → cuartos */}
-        <div className="flex flex-col" style={{ width: 24, rowGap: '6px' }}>
-          <div className="h-5" />
-          {groups.map((_, i) => (
-            <div key={i} className="flex flex-col" style={{ height: CARD_H * 2 + GAP * 2 + (i < groups.length - 1 ? 10 : 0) }}>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-                <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+    <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
+      <div style={{ position: 'relative', width: totalW, height: totalH + CARD_H, minHeight: 400, margin: '0 auto' }}>
+        {/* Left side */}
+        {sideRounds.map((round, ri) => {
+          const slots = (bracket[round] ?? []) as BracketSlot[]
+          const sideSlots = ri === 0
+            ? orderSlots(slots.filter(s => leftPositions.has(s.bracketPosition)), true)
+            : slots.filter(s => leftPosByRound[round]?.has(s.bracketPosition))
+              .sort((a, b) => {
+                const ya = yMap[`${round}:${a.bracketPosition}`] ?? 0
+                const yb = yMap[`${round}:${b.bracketPosition}`] ?? 0
+                return ya - yb
+              })
+          return sideSlots.map(slot => {
+            const y = yMap[`${round}:${slot.bracketPosition}`]
+            if (y === undefined) return null
+            return (
+              <div key={`L-${slot.ruleId}`} style={{ position: 'absolute', left: leftX(ri), top: y }}>
+                <MatchCard slot={slot} onEdit={() => onEdit(slot)} />
               </div>
-              <div style={{ width: '50%', height: CARD_H / 2 + GAP, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)', alignSelf: 'flex-end' }} />
-              <div style={{ width: '50%', height: CARD_H / 2 + GAP - 1, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-              <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start' }}>
-                <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
+            )
+          })
+        })}
+
+        {/* Right side */}
+        {sideRounds.map((round, ri) => {
+          const slots = (bracket[round] ?? []) as BracketSlot[]
+          const sideSlots = ri === 0
+            ? orderSlots(slots.filter(s => rightPositions.has(s.bracketPosition)), false)
+            : slots.filter(s => rightPosByRound[round]?.has(s.bracketPosition))
+              .sort((a, b) => {
+                const ya = yMap[`${round}:${a.bracketPosition}`] ?? 0
+                const yb = yMap[`${round}:${b.bracketPosition}`] ?? 0
+                return ya - yb
+              })
+          return sideSlots.map(slot => {
+            const y = yMap[`${round}:${slot.bracketPosition}`]
+            if (y === undefined) return null
+            return (
+              <div key={`R-${slot.ruleId}`} style={{ position: 'absolute', left: rightX(ri), top: y }}>
+                <MatchCard slot={slot} onEdit={() => onEdit(slot)} />
               </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Cuartos */}
-        <div className="flex flex-col" style={{ width: 164, rowGap: '6px' }}>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-center mb-1">Cuartos</p>
-          {groups.map(({ qf: qfPos }, i) => (
-            <div key={i} className="flex flex-col" style={{ height: CARD_H * 2 + GAP * 2 + (i < groups.length - 1 ? 10 : 0), justifyContent: 'center' }}>
-              <SlotOrEmpty slot={qfm[qfPos]} />
-            </div>
-          ))}
-        </div>
-
-        {/* Conectores cuartos → semis */}
-        <div className="flex flex-col" style={{ width: 24, rowGap: '9px' }}>
-          <div className="h-5" />
-          <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 2, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
-            </div>
-            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) / 2, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-            <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)', alignSelf: 'flex-end' }} />
-            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) / 2 - 1, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start' }}>
-              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
-            </div>
-          </div>
-          <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 2, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
-            </div>
-            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) / 2, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-            <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)', alignSelf: 'flex-end' }} />
-            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) / 2 - 1, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start' }}>
-              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
-            </div>
-          </div>
-        </div>
-
-        {/* Semis */}
-        <div className="flex flex-col" style={{ width: 164, rowGap: '9px' }}>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-center mb-1">Semifinal</p>
-          {/* Semi 1 centrada entre cuartos 1 y 2 */}
-          <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 2, display: 'flex', alignItems: 'center' }}>
-            <SlotOrEmpty slot={sfm[1]} />
-          </div>
-          {/* Semi 2 centrada entre cuartos 3 y 4 */}
-          <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 2, display: 'flex', alignItems: 'center' }}>
-            <SlotOrEmpty slot={sfm[2]} />
-          </div>
-        </div>
-
-        {/* Conector semis → final */}
-        <div className="flex flex-col" style={{ width: 24, rowGap: '11px' }}>
-          <div className="h-5" />
-          <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 4, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
-            </div>
-            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10), borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-            <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)', alignSelf: 'flex-end' }} />
-            <div style={{ width: '50%', height: (CARD_H * 2 + GAP * 2 + 10) - 1, borderRight: '1px solid rgba(255,255,255,0.15)' }} />
-            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start' }}>
-              <div style={{ width: '50%', height: 1, background: 'rgba(255,255,255,0.15)' }} />
-            </div>
-          </div>
-        </div>
+            )
+          })
+        })}
 
         {/* Final */}
-        <div className="flex flex-col" style={{ width: 164, rowGap: '11px' }}>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider text-center mb-1">Final</p>
-          <div style={{ height: (CARD_H * 2 + GAP * 2 + 10) * 4, display: 'flex', alignItems: 'center' }}>
-            {finm ? <MatchCard slot={finm} onEdit={() => onEdit(finm)} compact /> : (
-              <div className="rounded-xl border border-dashed border-gray-800 bg-gray-900/20 p-4 text-center" style={{ minWidth: 140 }}>
-                <span className="text-xs text-gray-700">Sin cruce</span>
-              </div>
-            )}
+        {(bracket['final'] ?? []).map((slot: BracketSlot) => (
+          <div key={`F-${slot.ruleId}`} style={{ position: 'absolute', left: finalX, top: finalY }}>
+            <MatchCard slot={slot} onEdit={() => onEdit(slot)} isFinal />
           </div>
-        </div>
-
+        ))}
       </div>
     </div>
   )
 }
 
-// ─── Bracket View ─────────────────────────────────────────────────────────────
+// ─── Mobile Bracket ───────────────────────────────────────────────────────────
 
-interface BracketViewProps {
-  bracket: Bracket
+function MobileBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: BracketSlot) => void }) {
+  const rounds = ROUND_ORDER.filter(r => (bracket[r] ?? []).length > 0)
+  return (
+    <div className="space-y-6">
+      {rounds.map(round => (
+        <div key={round} className="space-y-2">
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{ROUND_LABELS[round]}</h3>
+          {(bracket[round] ?? []).map((slot: BracketSlot) => (
+            <MatchCard key={slot.ruleId} slot={slot} onEdit={() => onEdit(slot)} />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
 }
 
-const ROUNDS = ['round_of_16', 'quarterfinal', 'semifinal', 'final'] as const
+// ─── Main View ────────────────────────────────────────────────────────────────
 
-export function BracketView({ bracket }: BracketViewProps) {
+export function BracketView({ bracket }: { bracket: any }) {
   const [editingSlot, setEditingSlot] = useState<BracketSlot | null>(null)
 
   return (
     <>
-      {/* Desktop: árbol con conectores */}
-      <div className="hidden md:block">
-        <DesktopBracket bracket={bracket} onEdit={setEditingSlot} />
+      <div className="hidden md:block overflow-x-auto pb-4">
+        <DynamicBracket bracket={bracket} onEdit={setEditingSlot} />
       </div>
-
-      {/* Mobile: secciones verticales */}
-      <div className="md:hidden space-y-6">
-        {ROUNDS.map((round) => (
-          (bracket[round] ?? []).length > 0 && (
-            <div key={round} className="space-y-2">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                {ROUND_LABELS[round]}
-              </h3>
-              {(bracket[round] ?? []).map((slot: BracketSlot) => (
-                <MatchCard key={slot.ruleId} slot={slot} onEdit={() => setEditingSlot(slot)} />
-              ))}
-            </div>
-          )
-        ))}
+      <div className="md:hidden">
+        <MobileBracket bracket={bracket} onEdit={setEditingSlot} />
       </div>
-
-      {editingSlot && (
-        <ResultModal slot={editingSlot} onClose={() => setEditingSlot(null)} />
-      )}
+      {editingSlot && <ResultModal slot={editingSlot} onClose={() => setEditingSlot(null)} />}
     </>
   )
 }

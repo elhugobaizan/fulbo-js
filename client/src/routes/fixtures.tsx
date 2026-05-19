@@ -305,9 +305,9 @@ function FixturesPage() {
   })
 
   const { data: activeTournament } = useActiveTournament()
-  const tournamentId = activeTournament?.id ?? 1
-  const isKnockout = selectedMatchday === KNOCKOUT_KEY
-  const { data: localData, isLoading: loadingLocal } = useLocalFixtures(tournamentId, isKnockout ? undefined : selectedMatchday as number | undefined)
+  const tournamentId = activeTournament?.id
+  const isKnockout = selectedMatchday === KNOCKOUT_KEY || activeTournament?.hasGroups === false
+  const { data: localData, isLoading: loadingLocal } = useLocalFixtures(tournamentId ?? 0, isKnockout ? undefined : selectedMatchday as number | undefined)
 
   const { data: knockoutMatches = [], isLoading: loadingKnockout } = useQuery({
     queryKey: ['knockout-fixtures', tournamentId],
@@ -315,7 +315,7 @@ function FixturesPage() {
       const { data } = await apiClient.get('/local', { params: { resource: 'knockout-fixtures', tournamentId } })
       return data.data ?? []
     },
-    enabled: !!tournamentId,
+    enabled: !!tournamentId && tournamentId > 0,
     staleTime: 1000 * 60 * 5,
   })
 
@@ -324,13 +324,21 @@ function FixturesPage() {
     sessionStorage.setItem(FIXTURES_MATCHDAY_KEY, String(m))
   }
 
-  const currentMatchday = selectedMatchday ?? localData?.matchday
   const matchdays = localData?.matchdays ?? []
   const hasKnockout = knockoutMatches.length > 0
 
-  // Reset to last matchday if current selection doesn't exist in this tournament
+  // Compute effective matchday — if saved value doesn't exist in this tournament, use last available
+  const effectiveMatchday = (() => {
+    if (isKnockout) return KNOCKOUT_KEY
+    const saved = selectedMatchday as number | undefined
+    if (saved && matchdays.includes(saved)) return saved
+    return localData?.matchday ?? saved
+  })()
+  const currentMatchday = effectiveMatchday
+
+  // Persist correction to sessionStorage if we fell back
   useEffect(() => {
-    if (!isKnockout && matchdays.length > 0 && currentMatchday !== undefined && !matchdays.includes(currentMatchday as number)) {
+    if (!isKnockout && matchdays.length > 0 && selectedMatchday && !matchdays.includes(selectedMatchday as number)) {
       handleMatchdayChange(matchdays[matchdays.length - 1])
     }
   }, [matchdays, tournamentId])
@@ -351,7 +359,7 @@ function FixturesPage() {
       {loadingLocal && <FixturesSkeleton />}
       {!loadingLocal && localData && (
         <>
-          {(matchdays.length > 0 || hasKnockout) && currentMatchday && (
+          {(matchdays.length > 0 || hasKnockout) && !isKnockout && currentMatchday && (
             <div className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-4">
               {/* Arrow selector */}
               <div className="mb-4 flex items-center justify-between">

@@ -242,6 +242,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           homeLabel,
           awayLabel,
           match: existingMatch ?? null,
+          homeWinnerOf: rule.homeWinnerOf,
+          awayWinnerOf: rule.awayWinnerOf,
+          homeWinnerOfPosition: rule.homeWinnerOf ? ruleById[rule.homeWinnerOf]?.bracketPosition ?? null : null,
+          homeWinnerOfRound: rule.homeWinnerOf ? ruleById[rule.homeWinnerOf]?.knockoutRound ?? null : null,
+          awayWinnerOfPosition: rule.awayWinnerOf ? ruleById[rule.awayWinnerOf]?.bracketPosition ?? null : null,
+          awayWinnerOfRound: rule.awayWinnerOf ? ruleById[rule.awayWinnerOf]?.knockoutRound ?? null : null,
         }
       })
     }
