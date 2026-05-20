@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { eq, inArray, and } from 'drizzle-orm'
+import { eq, inArray, and, sql } from 'drizzle-orm'
 import { matches, teams, groups, groupTeams, tournaments, localPlayers, matchEvents, matchLineups, nationalTeams } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
 
@@ -90,11 +90,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (resource === 'team-tournaments') {
       const teamId = Number(req.query.teamId)
       if (!teamId) return err(res, 'teamId required', 400)
-      const rows = await db.select({ tournament: tournaments, group: groups })
-        .from(groupTeams)
-        .innerJoin(groups, eq(groupTeams.groupId, groups.id))
-        .innerJoin(tournaments, eq(groups.tournamentId, tournaments.id))
-        .where(eq(groupTeams.teamId, teamId))
+      const isNationalTeam = req.query.teamType === 'national'
+      let rows: any[]
+      if (isNationalTeam) {
+        rows = await db.select({ tournament: tournaments, group: groups })
+          .from(groupTeams)
+          .innerJoin(groups, eq(groupTeams.groupId, groups.id))
+          .innerJoin(tournaments, eq(groups.tournamentId, tournaments.id))
+          .where(eq((groupTeams as any).nationalTeamId, teamId))
+      } else {
+        rows = await db.select({ tournament: tournaments, group: groups })
+          .from(groupTeams)
+          .innerJoin(groups, eq(groupTeams.groupId, groups.id))
+          .innerJoin(tournaments, eq(groups.tournamentId, tournaments.id))
+          .where(eq(groupTeams.teamId, teamId))
+      }
       const unique = Array.from(new Map(rows.map((r: any) => [r.tournament.id, { ...r.tournament, groupName: r.group.name }])).values())
       return ok(res, unique)
     }
@@ -103,6 +113,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (resource === 'team') {
       const teamId = Number(req.query.teamId)
       if (!teamId) return err(res, 'teamId required', 400)
+      if (req.query.teamType === 'national') {
+        const [nt] = await db.select().from(nationalTeams).where(eq(nationalTeams.id, teamId))
+        if (!nt) return err(res, 'National team not found', 404)
+        return ok(res, { ...nt, shortName: nt.name, logoUrl: nt.flagUrl })
+      }
       const [team] = await db.select().from(teams).where(eq(teams.id, teamId))
       if (!team) return err(res, 'Team not found', 404)
       return ok(res, team)
@@ -125,14 +140,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const teamId = Number(req.query.teamId)
       if (!teamId) return err(res, 'teamId required', 400)
       const limit = Number(req.query.limit) || 3
+      const isNationalTeam = req.query.teamType === 'national'
 
       const allMatches = await db.select().from(matches)
+
+      // For national teams, only include matches from national tournaments (raw SQL since team_type was added via ALTER TABLE)
+      let nationalTournamentIds: Set<number> | null = null
+      if (isNationalTeam) {
+        const raw = await db.execute(sql`SELECT id FROM tournaments WHERE team_type = 'national'`)
+        nationalTournamentIds = new Set(((raw as any).rows ?? []).map((r: any) => Number(r.id)))
+        console.log('nationalTournamentIds:', [...nationalTournamentIds])
+      }
 
       const all = req.query.all === 'true'
       const teamMatches = allMatches
         .filter((m: any) =>
           (m.homeTeamId === teamId || m.awayTeamId === teamId) &&
-          (all || (m.status !== 'finished' && m.scheduledAt !== null))
+          (all || (m.status !== 'finished' && m.scheduledAt !== null)) &&
+          (!nationalTournamentIds || nationalTournamentIds.has(m.tournamentId))
         )
         .sort((a: any, b: any) => {
           if (a.scheduledAt && b.scheduledAt)
@@ -148,7 +173,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ))] as number[]
       const tournamentIds = [...new Set(teamMatches.map((m: any) => m.tournamentId))] as number[]
 
-      const teamById = await resolveTeams(db, teamIds, false)
+      const teamById = await resolveTeams(db, teamIds, isNationalTeam)
       const tournamentsData = await db.select().from(tournaments).where(inArray(tournaments.id, tournamentIds))
 
       const tournamentById = Object.fromEntries(tournamentsData.map((t: any) => [t.id, t]))
@@ -218,7 +243,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }))
         }
       })
-      return ok(res, { tournament: { id: tournament.id, name: tournament.name, season: tournament.season, qualifiersPerGroup: (tournament as any).qualifiersPerGroup ?? 8 }, groups: standingsData })
+      return ok(res, {
+        tournament: {
+          id: tournament.id,
+          name: tournament.name,
+          season: tournament.season,
+          qualifiersPerGroup: (tournament as any).qualifiersPerGroup ?? 2,
+          wildcardQualifiers: (tournament as any).wildcardQualifiers ?? 0,
+          teamType: (tournament as any).teamType ?? (tournament as any).team_type ?? 'club',
+        },
+        groups: standingsData
+      })
     }
 
     // fixtures

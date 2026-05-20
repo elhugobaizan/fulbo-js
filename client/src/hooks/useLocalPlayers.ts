@@ -70,13 +70,13 @@ export function usePlayersByTeam(teamId: number) {
   return useQuery({ queryKey: ['players-by-team', teamId], queryFn: () => fetchPlayersByTeam(teamId), enabled: teamId > 0, staleTime: 1000 * 60 * 5 })
 }
 
-async function fetchTeamTournaments(teamId: number) {
-  const { data } = await apiClient.get('/local', { params: { resource: 'team-tournaments', teamId, tournamentId: 1 } })
+async function fetchTeamTournaments(teamId: number, teamType?: string) {
+  const { data } = await apiClient.get('/local', { params: { resource: 'team-tournaments', teamId, tournamentId: 1, ...(teamType ? { teamType } : {}) } })
   return data.data ?? []
 }
 
-export function useTeamTournaments(teamId: number) {
-  return useQuery({ queryKey: ['team-tournaments', teamId], queryFn: () => fetchTeamTournaments(teamId), enabled: teamId > 0, staleTime: 1000 * 60 * 10 })
+export function useTeamTournaments(teamId: number, teamType?: string) {
+  return useQuery({ queryKey: ['team-tournaments', teamId, teamType], queryFn: () => fetchTeamTournaments(teamId, teamType), enabled: teamId > 0, staleTime: 1000 * 60 * 10 })
 }
 
 async function fetchTournamentTeams(tournamentId: number) {

@@ -19,6 +19,7 @@ import { PlayerRow } from '../components/PlayerRow'
 const searchSchema = z.object({
   leagueId: z.number().optional(),
   leagueName: z.string().optional(),
+  teamType: z.string().optional(),
 })
 
 export const Route = createFileRoute('/team/$teamId')({
@@ -46,8 +47,8 @@ interface LocalTeam {
   alternateColor: string | null;
 }
 
-async function fetchLocalTeam(teamId: number): Promise<LocalTeam | null> {
-  const { data } = await apiClient.get('/local', { params: { resource: 'team', teamId, tournamentId: 1 } })
+async function fetchLocalTeam(teamId: number, tournamentId: number, teamType?: string): Promise<LocalTeam | null> {
+  const { data } = await apiClient.get('/local', { params: { resource: 'team', teamId, tournamentId, ...(teamType ? { teamType } : {}) } })
   return data.data ?? null
 }
 
@@ -69,13 +70,15 @@ function NoSquad({ isLocal }: { isLocal: boolean }) {
 function TeamTabs({
   activeTab,
   setActiveTab,
+  isNational = false,
 }: {
   activeTab: 'fixtures' | 'squad'
   setActiveTab: (tab: 'fixtures' | 'squad') => void
+  isNational?: boolean
 }) {
   const tabs = [
     { id: 'fixtures' as const, label: 'Partidos' },
-    { id: 'squad' as const, label: 'Plantel' },
+    ...(!isNational ? [{ id: 'squad' as const, label: 'Plantel' }] : []),
   ]
 
   return (
@@ -172,7 +175,8 @@ function MatchRow({ match }: { match: any }) {
 
 function TeamPage() {
   const { teamId } = Route.useParams()
-  const { leagueId, leagueName } = Route.useSearch()
+  const { leagueId, leagueName, teamType } = Route.useSearch()
+  const isNational = teamType === 'national'
   const navigate = useNavigate()
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null)
   const { isFavorite, toggle } = useFavorites()
@@ -182,22 +186,23 @@ function TeamPage() {
   const fav = isFavorite(numericId)
 
   // Torneo local
+  const { data: activeTournament } = useActiveTournament()
+  const tournamentId = activeTournament?.id ?? leagueId ?? 1
+
   const { data: localTeam, isLoading: loadingLocal } = useQuery({
-    queryKey: ['local-team', numericId],
-    queryFn: () => fetchLocalTeam(numericId),
+    queryKey: ['local-team', numericId, tournamentId, teamType],
+    queryFn: () => fetchLocalTeam(numericId, tournamentId, teamType),
     staleTime: 1000 * 60 * 60,
     enabled: local,
   })
 
-  const { data: activeTournament } = useActiveTournament()
-  const tournamentId = activeTournament?.id ?? leagueId ?? 1
   const { data: localPlayers = [] } = usePlayersByTeam(local ? numericId : 0)
   const { data: tournamentTeams = [] } = useTournamentTeams(local ? tournamentId : 0)
-  const { data: teamTournaments = [] } = useTeamTournaments(local ? numericId : 0)
+  const { data: teamTournaments = [] } = useTeamTournaments(local ? numericId : 0, teamType)
   const [showAddPlayer, setShowAddPlayer] = useState(false)
   const [selectedLocalPlayer, setSelectedLocalPlayer] = useState<any>(null)
   const [activeTab, setActiveTab] = useState<'squad' | 'fixtures'>('fixtures')
-  const { data: teamFixtures = [] } = useTeamFixtures(numericId, 20, true)
+  const { data: teamFixtures = [] } = useTeamFixtures(numericId, 20, true, teamType)
 
   const handleToggleFavorite = () => {
     if (local && localTeam) {
@@ -225,10 +230,10 @@ function TeamPage() {
       ) : null}
 
       {/* Tab toggle - only for local teams */}
-      <TeamTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+      <TeamTabs activeTab={activeTab} setActiveTab={setActiveTab} isNational={isNational} />
 
       {/* Local squad */}
-      {local && activeTab === 'squad' && (
+      {local && !isNational && activeTab === 'squad' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-400">
