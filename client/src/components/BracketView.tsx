@@ -290,17 +290,17 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
   // Right: mirrored, col 0 (first round) = rightmost
   // Center: final
   const numSideRounds = sideRounds.length
-  const totalW = numSideRounds * 2 * (CARD_W + COL_GAP) + CARD_W
+  const totalW = numSideRounds * 2 * (CARD_W + COL_GAP)
 
   function leftX(ri: number) { return ri * (CARD_W + COL_GAP) }
   function rightX(ri: number) { return totalW - CARD_W - ri * (CARD_W + COL_GAP) }
-  const finalX = numSideRounds * (CARD_W + COL_GAP)
+  const finalX = (totalW - CARD_W) / 2
 
   // Final Y = average of the two semi Y positions
   const sfRound = sideRounds[sideRounds.length - 1]
   const sfSlots = sfRound ? (bracket[sfRound] ?? []) as BracketSlot[] : []
   const sfYs = sfSlots.map(s => yMap[`${sfRound}:${s.bracketPosition}`]).filter(y => y !== undefined)
-  const finalY = sfYs.length > 0 ? sfYs.reduce((a, b) => a + b, 0) / sfYs.length : totalH / 2 - CARD_H / 2
+  const finalY = sfYs.length > 0 ? sfYs.reduce((a, b) => a + b, 0) / sfYs.length - CARD_H - 16 : totalH / 2 - CARD_H / 2
 
   return (
     <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
@@ -350,11 +350,48 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
         })}
 
         {/* Final */}
-        {(bracket['final'] ?? []).map((slot: BracketSlot) => (
-          <div key={`F-${slot.ruleId}`} style={{ position: 'absolute', left: finalX, top: finalY }}>
-            <MatchCard slot={slot} onEdit={() => onEdit(slot)} isFinal knockoutStarted={knockoutStarted} />
-          </div>
-        ))}
+        {(bracket['final'] ?? []).map((slot: BracketSlot) => {
+          const match = slot.match
+          const isFinished = match?.status === 'finished'
+
+          // Resolve winner (mock if not finished yet for preview)
+          const MOCK_WINNER = { name: 'Argentina', logoUrl: 'https://a.espncdn.com/i/teamlogos/countries/500/arg.png' }
+          let champion: { name: string; logoUrl?: string | null } | null = null
+          if (isFinished) {
+            const homeWon = (match?.homePenalties != null)
+              ? (match.homePenalties ?? 0) > (match.awayPenalties ?? 0)
+              : (match?.homeScore ?? 0) > (match?.awayScore ?? 0)
+            champion = homeWon
+              ? { name: slot.homeTeam?.name ?? slot.homeLabel, logoUrl: slot.homeTeam?.logoUrl }
+              : { name: slot.awayTeam?.name ?? slot.awayLabel, logoUrl: slot.awayTeam?.logoUrl }
+          } else {
+            champion = MOCK_WINNER // remove this line when going live
+          }
+
+          return (
+            <div key={`F-${slot.ruleId}`}>
+              {champion && (
+                <div style={{ position: 'absolute', left: finalX - 40, top: finalY - 200, width: CARD_W + 80 }}
+                  className="text-center">
+                  <div className="text-3xl mb-1">🏆</div>
+                  <div className="text-yellow-400 text-[10px] font-bold uppercase tracking-widest mb-2">Campeón</div>
+                  <div
+                    className="rounded-2xl px-4 py-3 flex items-center justify-center gap-3"
+                    style={{ background: 'linear-gradient(135deg, rgba(234,179,8,0.15) 0%, rgba(234,179,8,0.05) 100%)', border: '1px solid rgba(234,179,8,0.35)', boxShadow: '0 0 24px rgba(234,179,8,0.12)' }}
+                  >
+                    {champion.logoUrl && (
+                      <img src={champion.logoUrl} alt="" className="w-10 h-10 object-contain flex-shrink-0" />
+                    )}
+                    <span className="text-white font-bold text-lg leading-tight">{champion.name}</span>
+                  </div>
+                </div>
+              )}
+              <div style={{ position: 'absolute', left: finalX, top: finalY }}>
+                <MatchCard slot={slot} onEdit={() => onEdit(slot)} isFinal knockoutStarted={knockoutStarted} />
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
