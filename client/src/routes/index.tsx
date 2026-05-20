@@ -90,7 +90,7 @@ function TeamFixturesCard({ fav }: { fav: any }) {
       {/* Fixtures */}
       {isLoading ? (
         <div className="px-4 py-3 space-y-2 animate-pulse">
-          {[1,2,3].map(i => <div key={i} className="h-4 bg-gray-800 rounded" />)}
+          {[1, 2, 3].map(i => <div key={i} className="h-4 bg-gray-800 rounded" />)}
         </div>
       ) : fixtures.length === 0 ? (
         <p className="px-4 py-3 text-xs text-gray-600">Sin próximos partidos</p>
