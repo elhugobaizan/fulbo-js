@@ -319,6 +319,13 @@ function FixturesPage() {
     staleTime: 1000 * 60 * 5,
   })
 
+  // Sync selectedMatchday with backend default when undefined
+  useEffect(() => {
+    if (selectedMatchday === undefined && localData?.matchday != null) {
+      setSelectedMatchday(localData.matchday)
+    }
+  }, [localData?.matchday, selectedMatchday])
+
   const handleMatchdayChange = (m: number | string) => {
     setSelectedMatchday(m)
     sessionStorage.setItem(FIXTURES_MATCHDAY_KEY, String(m))

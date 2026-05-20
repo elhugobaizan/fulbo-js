@@ -29,7 +29,7 @@ function BracketPage() {
       )}
 
       {!isLoading && bracket && (
-        <BracketView bracket={bracket} />
+        <BracketView bracket={bracket} knockoutStarted={activeTournament?.knockoutStarted ?? false} />
       )}
 
       {!isLoading && !bracket && (

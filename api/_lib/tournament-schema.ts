@@ -50,6 +50,7 @@ export const tournaments = pgTable('tournaments', {
   allowCrossGroup: boolean('allow_cross_group').default(false).notNull(),
   knockoutStarted: boolean('knockout_started').default(false).notNull(),
   teamType: varchar('team_type', { length: 10 }).notNull().default('club'),
+  wildcardQualifiers: integer('wildcard_qualifiers').notNull().default(0),
 })
 
 // ─── Teams ───────────────────────────────────────────────────────────────────

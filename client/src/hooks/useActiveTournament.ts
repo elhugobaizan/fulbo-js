@@ -9,6 +9,7 @@ export interface ActiveTournament {
   hasGroups: boolean
   qualifiersPerGroup: number
   active: boolean
+  knockoutStarted: boolean
 }
 
 async function fetchActiveTournament(): Promise<ActiveTournament | null> {

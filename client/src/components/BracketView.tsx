@@ -22,7 +22,7 @@ const COL_GAP = 24 // horizontal gap between columns
 
 // ─── Match Card ───────────────────────────────────────────────────────────────
 
-function MatchCard({ slot, onEdit, isFinal = false }: { slot: BracketSlot; onEdit: () => void; isFinal?: boolean }) {
+function MatchCard({ slot, onEdit, isFinal = false, knockoutStarted = true }: { slot: BracketSlot; onEdit: () => void; isFinal?: boolean; knockoutStarted?: boolean }) {
   const navigate = useNavigate()
   const match = slot.match
   const isFinished = match?.status === 'finished'
@@ -55,16 +55,16 @@ function MatchCard({ slot, onEdit, isFinal = false }: { slot: BracketSlot; onEdi
       onClick={handleClick}
       style={{ width: CARD_W }}
       className={`rounded-xl border overflow-hidden transition-all text-left flex-shrink-0 ${isFinal
-          ? 'border-yellow-600/60 bg-yellow-950/20 hover:border-yellow-500'
-          : isFinished
-            ? 'border-gray-700 bg-gray-900/60 hover:bg-gray-900/80'
-            : canEdit
-              ? 'border-dashed border-gray-700 bg-gray-900/30 hover:border-gray-500'
-              : 'border-dashed border-gray-800 bg-gray-900/10 cursor-default opacity-60 hover:border-gray-600 hover:bg-gray-800/30 hover:opacity-80'
+        ? 'border-yellow-600/60 bg-yellow-950/20 hover:border-yellow-500'
+        : isFinished
+          ? 'border-gray-700 bg-gray-900/60 hover:bg-gray-900/80'
+          : canEdit
+            ? 'border-dashed border-gray-700 bg-gray-900/30 hover:border-gray-500'
+            : 'border-dashed border-gray-800 bg-gray-900/10 cursor-default opacity-60 hover:border-gray-600 hover:bg-gray-800/30 hover:opacity-80'
         }`}
     >
       <div className={`flex items-center gap-1.5 px-2.5 py-2 ${homeWon ? 'bg-gray-700/60' : ''}`}>
-        {slot.homeTeam?.logoUrl
+        {knockoutStarted && slot.homeTeam?.logoUrl
           ? <img src={slot.homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
           : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
         <span className={`text-xs flex-1 truncate ${homeWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.homeLabel}</span>
@@ -72,7 +72,7 @@ function MatchCard({ slot, onEdit, isFinal = false }: { slot: BracketSlot; onEdi
       </div>
       <div className="h-px bg-gray-800" />
       <div className={`flex items-center gap-1.5 px-2.5 py-2 ${awayWon ? 'bg-gray-700/60' : ''}`}>
-        {slot.awayTeam?.logoUrl
+        {knockoutStarted && slot.awayTeam?.logoUrl
           ? <img src={slot.awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
           : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
         <span className={`text-xs flex-1 truncate ${awayWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.awayLabel}</span>
@@ -161,7 +161,7 @@ function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void
 
 // ─── Dynamic Bracket (CSS absolute positioning) ───────────────────────────────
 
-function DynamicBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: BracketSlot) => void }) {
+function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket: any; onEdit: (slot: BracketSlot) => void; knockoutStarted?: boolean }) {
   const rounds = ROUND_ORDER.filter(r => (bracket[r] ?? []).length > 0)
   if (rounds.length === 0) return null
 
@@ -321,7 +321,7 @@ function DynamicBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: Brac
             if (y === undefined) return null
             return (
               <div key={`L-${slot.ruleId}`} style={{ position: 'absolute', left: leftX(ri), top: y }}>
-                <MatchCard slot={slot} onEdit={() => onEdit(slot)} />
+                <MatchCard slot={slot} onEdit={() => onEdit(slot)} knockoutStarted={knockoutStarted} />
               </div>
             )
           })
@@ -343,7 +343,7 @@ function DynamicBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: Brac
             if (y === undefined) return null
             return (
               <div key={`R-${slot.ruleId}`} style={{ position: 'absolute', left: rightX(ri), top: y }}>
-                <MatchCard slot={slot} onEdit={() => onEdit(slot)} />
+                <MatchCard slot={slot} onEdit={() => onEdit(slot)} knockoutStarted={knockoutStarted} />
               </div>
             )
           })
@@ -352,7 +352,7 @@ function DynamicBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: Brac
         {/* Final */}
         {(bracket['final'] ?? []).map((slot: BracketSlot) => (
           <div key={`F-${slot.ruleId}`} style={{ position: 'absolute', left: finalX, top: finalY }}>
-            <MatchCard slot={slot} onEdit={() => onEdit(slot)} isFinal />
+            <MatchCard slot={slot} onEdit={() => onEdit(slot)} isFinal knockoutStarted={knockoutStarted} />
           </div>
         ))}
       </div>
@@ -362,7 +362,7 @@ function DynamicBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: Brac
 
 // ─── Mobile Bracket ───────────────────────────────────────────────────────────
 
-function MobileBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: BracketSlot) => void }) {
+function MobileBracket({ bracket, onEdit, knockoutStarted = false }: { bracket: any; onEdit: (slot: BracketSlot) => void; knockoutStarted?: boolean }) {
   const rounds = ROUND_ORDER.filter(r => (bracket[r] ?? []).length > 0)
   return (
     <div className="space-y-6">
@@ -370,7 +370,7 @@ function MobileBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: Brack
         <div key={round} className="space-y-2">
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{ROUND_LABELS[round]}</h3>
           {(bracket[round] ?? []).map((slot: BracketSlot) => (
-            <MatchCard key={slot.ruleId} slot={slot} onEdit={() => onEdit(slot)} />
+            <MatchCard key={slot.ruleId} slot={slot} onEdit={() => onEdit(slot)} knockoutStarted={knockoutStarted} />
           ))}
         </div>
       ))}
@@ -380,13 +380,13 @@ function MobileBracket({ bracket, onEdit }: { bracket: any; onEdit: (slot: Brack
 
 // ─── Main View ────────────────────────────────────────────────────────────────
 
-export function BracketView({ bracket }: { bracket: any }) {
+export function BracketView({ bracket, knockoutStarted = true }: { bracket: any; knockoutStarted?: boolean }) {
   const [editingSlot, setEditingSlot] = useState<BracketSlot | null>(null)
 
   return (
     <>
       <div className="hidden md:block overflow-x-auto pb-4">
-        <DynamicBracket bracket={bracket} onEdit={setEditingSlot} />
+        <DynamicBracket bracket={bracket} onEdit={setEditingSlot} knockoutStarted={knockoutStarted} />
       </div>
       <div className="md:hidden">
         <MobileBracket bracket={bracket} onEdit={setEditingSlot} />

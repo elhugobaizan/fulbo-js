@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { eq, and } from 'drizzle-orm'
-import { matches, teams, groups, groupTeams, bracketRules } from '../_lib/tournament-schema'
+import { eq, and, sql } from 'drizzle-orm'
+import { matches, teams, groups, groupTeams, bracketRules, nationalTeams, tournaments } from '../_lib/tournament-schema'
 import { ok, err } from '../_lib/helpers'
 import { KNOCKOUT_ROUNDS } from '../_lib/tournament-schema'
 
@@ -100,20 +100,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const db = getDb()
 
-    // Traer todas las reglas del bracket
-    const rules = await db.select().from(bracketRules)
-      .where(eq(bracketRules.tournamentId, tournamentId))
+    // Traer todas las reglas del bracket (raw SQL to include wildcard_group_ids added via ALTER TABLE)
+    const rulesRaw = await db.execute(sql`SELECT * FROM bracket_rules WHERE tournament_id = ${tournamentId}`)
+    const rules = ((rulesRaw as any).rows ?? []).map((r: any) => ({
+      ...r,
+      tournamentId: r.tournament_id,
+      knockoutRound: r.knockout_round,
+      bracketPosition: r.bracket_position,
+      homeGroupId: r.home_group_id,
+      homePosition: r.home_position,
+      awayGroupId: r.away_group_id,
+      awayPosition: r.away_position,
+      homeWinnerOf: r.home_winner_of,
+      awayWinnerOf: r.away_winner_of,
+      wildcardGroupIds: r.wildcard_group_ids,
+    }))
 
     // Traer todos los grupos con sus equipos
     const groupsData = await db.select().from(groups)
       .where(eq(groups.tournamentId, tournamentId))
 
+    // Check tournament settings
+    const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId))
+    const isNational = (tournament as any)?.teamType === 'national' || (tournament as any)?.team_type === 'national'
+    const knockoutStarted = !!(tournament as any)?.knockoutStarted
+
     const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
-      const members = await db
-        .select({ teamId: groupTeams.teamId, team: teams })
-        .from(groupTeams)
-        .innerJoin(teams, eq(groupTeams.teamId, teams.id))
-        .where(eq(groupTeams.groupId, group.id))
+      let members: any[]
+      if (isNational) {
+        const rows = await db.select({ teamId: (groupTeams as any).nationalTeamId, team: nationalTeams })
+          .from(groupTeams)
+          .innerJoin(nationalTeams, eq((groupTeams as any).nationalTeamId, nationalTeams.id))
+          .where(eq(groupTeams.groupId, group.id))
+        members = rows.map((r: any) => ({ ...r, team: { ...r.team, logoUrl: r.team.flagUrl, shortName: r.team.name } }))
+      } else {
+        members = await db.select({ teamId: groupTeams.teamId, team: teams })
+          .from(groupTeams)
+          .innerJoin(teams, eq(groupTeams.teamId, teams.id))
+          .where(eq(groupTeams.groupId, group.id))
+      }
       return { ...group, members }
     }))
 
@@ -123,11 +148,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Enriquecer partidos con equipos
     const enrichedMatches = await Promise.all(allMatches.map(async (match) => {
+      const teamTable = isNational ? nationalTeams : teams
       const homeTeam = match.homeTeamId
-        ? await db.select().from(teams).where(eq(teams.id, match.homeTeamId)).then(r => r[0])
+        ? await db.select().from(teamTable).where(eq(teamTable.id, match.homeTeamId)).then(r => {
+          const t = r[0] as any
+          return t ? { ...t, shortName: t.shortName ?? t.name, logoUrl: t.logoUrl ?? t.flagUrl } : null
+        })
         : null
       const awayTeam = match.awayTeamId
-        ? await db.select().from(teams).where(eq(teams.id, match.awayTeamId)).then(r => r[0])
+        ? await db.select().from(teamTable).where(eq(teamTable.id, match.awayTeamId)).then(r => {
+          const t = r[0] as any
+          return t ? { ...t, shortName: t.shortName ?? t.name, logoUrl: t.logoUrl ?? t.flagUrl } : null
+        })
         : null
       return { ...match, homeTeam, awayTeam }
     }))
@@ -135,22 +167,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Calcular standings por grupo
     const standingsByGroup: Record<number, any[]> = {}
     for (const group of groupsWithTeams) {
-      const groupTeamIds = new Set(group.members.map((m: any) => m.teamId))
+      const groupTeamIds = new Set(group.members.map((m: any) => m.teamId).filter(Boolean))
       const relevantMatches = enrichedMatches.filter(m =>
         m.phase === 'group' && (groupTeamIds.has(m.homeTeamId) || groupTeamIds.has(m.awayTeamId))
       )
       standingsByGroup[group.id] = calculateStandings(relevantMatches, group.members)
     }
 
-    for (const [groupId, standings] of Object.entries(standingsByGroup)) {
-      console.log(`Group ${groupId}:`, (standings as any[]).slice(0, 3).map((s: any) => `${s.team.name}: ${s.points}pts`))
-    }
-
     // Mapear partidos knockout por bracketPosition + knockoutRound
     const knockoutMatches = enrichedMatches.filter(m => m.phase === 'knockout')
 
     // Mapas para resolución
-    const ruleById: Record<number, any> = Object.fromEntries(rules.map(r => [r.id, r]))
+    const ruleById: Record<number, any> = Object.fromEntries(rules.map((r: any) => [r.id, r]))
 
     // Para cada regla, buscar el match knockout correspondiente
     // Los matches knockout se linkean por bracketPosition + knockoutRound
@@ -160,33 +188,101 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       matchByRulePosition[key] = match
     }
 
+    // Helper: rank wildcards from a set of group ids at a given position
+    function buildWildcardPool(wcGroupIds: number[], position: number): any[] {
+      const candidates = wcGroupIds.flatMap((gid: number) => {
+        const standing = standingsByGroup[gid]
+        return standing && standing[position - 1] ? [standing[position - 1]] : []
+      })
+      return candidates.sort((a: any, b: any) => {
+        if (b.points !== a.points) return b.points - a.points
+        const da = a.goalsFor - a.goalsAgainst, db2 = b.goalsFor - b.goalsAgainst
+        if (db2 !== da) return db2 - da
+        return b.goalsFor - a.goalsFor
+      })
+    }
+
+    // Pre-calculate wildcard pools per round (shared pool keyed by wildcardGroupIds string)
+    // Each pool is consumed in order of bracketPosition so no team appears twice
+    const wildcardPoolByKey: Record<string, any[]> = {}
+    const wildcardIndexByKey: Record<string, number> = {}
+
     // Construir bracket por ronda
-    const rounds = KNOCKOUT_ROUNDS.filter(r => rules.some(rule => rule.knockoutRound === r))
+    const rounds = KNOCKOUT_ROUNDS.filter((r: string) => rules.some((rule: any) => rule.knockoutRound === r))
     const bracket: Record<string, any[]> = {}
 
     for (const round of rounds) {
       const roundRules = rules
-        .filter(r => r.knockoutRound === round)
-        .sort((a, b) => a.bracketPosition - b.bracketPosition)
+        .filter((r: any) => r.knockoutRound === round)
+        .sort((a: any, b: any) => a.bracketPosition - b.bracketPosition)
 
-      bracket[round] = roundRules.map(rule => {
+      // Build ONE global wildcard pool for this round
+      // Collect all unique group ids across all wildcard rules in this round
+      const allWcGroupIds = new Set<number>()
+      let wcPosition = 3
+      for (const rule of roundRules as any[]) {
+        const ruleAny = rule as any
+        if (ruleAny.wildcardGroupIds) {
+          ruleAny.wildcardGroupIds.split(',').map(Number).forEach((id: number) => allWcGroupIds.add(id))
+          wcPosition = rule.awayPosition ?? rule.homePosition ?? 3
+        }
+      }
+      const globalWildcardPool = allWcGroupIds.size > 0
+        ? buildWildcardPool([...allWcGroupIds], wcPosition)
+        : []
+      let globalWildcardIndex = 0
+
+      bracket[round] = roundRules.map((rule: any) => {
         const existingMatch = matchByRulePosition[`${round}:${rule.bracketPosition}`]
+        const ruleAny = rule as any
 
-        // Resolver equipos
         let homeTeam = null
         let awayTeam = null
         let homeLabel = '?'
         let awayLabel = '?'
 
-        if (existingMatch) {
-          // Ya hay partido jugado o programado
+        if (existingMatch && knockoutStarted) {
           homeTeam = existingMatch.homeTeam
           awayTeam = existingMatch.awayTeam
           homeLabel = homeTeam?.shortName ?? homeTeam?.name ?? '?'
           awayLabel = awayTeam?.shortName ?? awayTeam?.name ?? '?'
+        } else if (!knockoutStarted) {
+          // Knockout not started: show only position/group labels, no team data
+          if (ruleAny.wildcardGroupIds && rule.awayGroupId === null && rule.awayPosition !== null) {
+            const wcIds = ruleAny.wildcardGroupIds.split(',').map(Number)
+            const wcNames = wcIds.map((id: number) => groupsWithTeams.find((g: any) => g.id === id)?.name?.replace('Grupo ', '') ?? '?').join('/')
+            awayLabel = `${rule.awayPosition}° ${wcNames}`
+          } else if (rule.awayGroupId !== null && rule.awayPosition !== null) {
+            const groupName = groupsWithTeams.find((g: any) => g.id === rule.awayGroupId)?.name ?? '?'
+            awayLabel = `${rule.awayPosition}° ${groupName}`
+          } else if (rule.awayWinnerOf !== null) {
+            const prevRule = ruleById[rule.awayWinnerOf]
+            awayLabel = prevRule ? `Ganador cruce ${prevRule.bracketPosition}` : '?'
+          }
+          if (ruleAny.wildcardGroupIds && rule.homeGroupId === null && rule.homePosition !== null) {
+            const wcIds = ruleAny.wildcardGroupIds.split(',').map(Number)
+            const wcNames = wcIds.map((id: number) => groupsWithTeams.find((g: any) => g.id === id)?.name?.replace('Grupo ', '') ?? '?').join('/')
+            homeLabel = `${rule.homePosition}° ${wcNames}`
+          } else if (rule.homeGroupId !== null && rule.homePosition !== null) {
+            const groupName = groupsWithTeams.find((g: any) => g.id === rule.homeGroupId)?.name ?? '?'
+            homeLabel = `${rule.homePosition}° ${groupName}`
+          } else if (rule.homeWinnerOf !== null) {
+            const prevRule = ruleById[rule.homeWinnerOf]
+            homeLabel = prevRule ? `Ganador cruce ${prevRule.bracketPosition}` : '?'
+          }
         } else {
-          // Resolver desde reglas
-          if (rule.homeGroupId !== null && rule.homePosition !== null) {
+          // Resolver home
+          if (ruleAny.wildcardGroupIds && rule.homeGroupId === null && rule.homePosition !== null) {
+            const wcIds = ruleAny.wildcardGroupIds.split(',').map(Number)
+            const wcNames = wcIds.map((id: number) => groupsWithTeams.find(g => g.id === id)?.name?.replace('Grupo ', '') ?? '?').join('/')
+            if (globalWildcardPool[globalWildcardIndex]) {
+              homeTeam = globalWildcardPool[globalWildcardIndex].team
+              homeLabel = homeTeam?.shortName ?? homeTeam?.name ?? '?'
+              globalWildcardIndex++
+            } else {
+              homeLabel = `${rule.homePosition}° ${wcNames}`
+            }
+          } else if (rule.homeGroupId !== null && rule.homePosition !== null) {
             const standing = standingsByGroup[rule.homeGroupId]?.[rule.homePosition - 1]
             if (standing) {
               homeTeam = standing.team
@@ -209,7 +305,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
           }
 
-          if (rule.awayGroupId !== null && rule.awayPosition !== null) {
+          // Resolver away
+          if (ruleAny.wildcardGroupIds && rule.awayGroupId === null && rule.awayPosition !== null) {
+            const wcIds = ruleAny.wildcardGroupIds.split(',').map(Number)
+            const wcNames = wcIds.map((id: number) => groupsWithTeams.find(g => g.id === id)?.name?.replace('Grupo ', '') ?? '?').join('/')
+            if (globalWildcardPool[globalWildcardIndex]) {
+              awayTeam = globalWildcardPool[globalWildcardIndex].team
+              awayLabel = awayTeam?.shortName ?? awayTeam?.name ?? '?'
+              globalWildcardIndex++
+            } else {
+              awayLabel = `${rule.awayPosition}° ${wcNames}`
+            }
+          } else if (rule.awayGroupId !== null && rule.awayPosition !== null) {
             const standing = standingsByGroup[rule.awayGroupId]?.[rule.awayPosition - 1]
             if (standing) {
               awayTeam = standing.team
@@ -231,7 +338,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               }
             }
           }
-        }
+        } // end knockoutStarted else
 
         return {
           ruleId: rule.id,

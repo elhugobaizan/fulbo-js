@@ -232,7 +232,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let target = matchday
       if (!target) {
         const pending = allMatches.filter((m: any) => m.status !== 'finished').sort((a: any, b: any) => a.matchday - b.matchday)
-        target = pending[0]?.matchday ?? null
+        target = pending[0]?.matchday ?? allMatchdays[allMatchdays.length - 1] ?? null
       }
       if (!target) return ok(res, { matchday: null, matchdays: allMatchdays, matches: [] })
       const dayMatches = allMatches.filter((m: any) => m.matchday === target)

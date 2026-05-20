@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Lock, Plus, Check, X, Trophy, Trash2, Calendar } from 'lucide-react'
+import { Lock, Plus, Check, X, Trophy, Trash2 } from 'lucide-react'
 import { MatchEventsPanel } from '../components/MatchEventsPanel'
+import { KnockoutSection } from '../components/KnockoutSection'
+
+const ROUND_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'final']
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
 
@@ -52,34 +55,9 @@ async function fetchAllTournaments(token: string) {
   return data.data ?? []
 }
 
-async function generateKnockout(token: string, tournamentId: number, round: string) {
-  const { data } = await apiClient.post('/admin?action=generate-knockout',
-    { tournamentId, round }, { headers: { 'x-admin-token': token } }
-  )
-  return data.data
-}
 
-async function fetchAllTeamsForManual(token: string, tournamentId?: number) {
-  const { data } = await apiClient.get('/admin', {
-    params: { action: 'teams', ...(tournamentId ? { tournamentId } : {}) },
-    headers: { 'x-admin-token': token },
-  })
-  return data.data ?? []
-}
 
-async function fetchKnockoutMatches(tournamentId: number) {
-  const { data } = await apiClient.get('/local', {
-    params: { resource: 'knockout-fixtures', tournamentId },
-  })
-  return data.data ?? []
-}
 
-async function setMatchDate(token: string, matchId: number, scheduledAt: string | null) {
-  const { data } = await apiClient.patch('/admin?action=set-match-date',
-    { matchId, scheduledAt }, { headers: { 'x-admin-token': token } }
-  )
-  return data.data
-}
 
 async function activateTournament(token: string, tournamentId: number) {
   const { data } = await apiClient.post('/admin?action=activate-tournament',
@@ -328,19 +306,30 @@ function NewMatchForm({ allTeams, token, onSaved, tournamentId, groupsData, allo
 function ruleLabel(rule: any, groups: any[], allRules: any[]): string {
   const parts = []
   // Local
-  if (rule.homeGroupId !== null && rule.homePosition !== null) {
-    const g = groups.find((g: any) => g.id === rule.homeGroupId)
-    parts.push(`${rule.homePosition}° ${g?.name ?? '?'}`)
-  } else if (rule.homeWinnerOf !== null) {
+  const wildcardLabel = (groupId: number | null, position: number | null, wcGroupIds: string | null) => {
+    // If groupId is set, resolve normally regardless of wcGroupIds
+    if (groupId !== null && position !== null) {
+      const g = groups.find((g: any) => g.id === groupId)
+      return `${position}° ${g?.name ?? '?'}`
+    }
+    // Wildcard slot: groupId is null but wcGroupIds lists possible groups
+    if (wcGroupIds && position !== null) {
+      const ids = wcGroupIds.split(',').map(Number)
+      const names = ids.map((id: number) => groups.find((g: any) => g.id === id)?.name?.replace('Grupo ', '') ?? '?').join('/')
+      return `${position}° ${names}`
+    }
+    return null
+  }
+  const homeLabel = wildcardLabel(rule.homeGroupId, rule.homePosition, rule.wildcardGroupIds ?? null)
+  if (homeLabel) parts.push(homeLabel)
+  else if (rule.homeWinnerOf !== null) {
     const prev = allRules.find((r: any) => r.id === rule.homeWinnerOf)
     parts.push(`Gan. cruce ${prev?.bracketPosition ?? '?'}`)
   }
   parts.push('vs')
-  // Visitante
-  if (rule.awayGroupId !== null && rule.awayPosition !== null) {
-    const g = groups.find((g: any) => g.id === rule.awayGroupId)
-    parts.push(`${rule.awayPosition}° ${g?.name ?? '?'}`)
-  } else if (rule.awayWinnerOf !== null) {
+  const awayLabel = wildcardLabel(rule.awayGroupId, rule.awayPosition, rule.wildcardGroupIds ?? null)
+  if (awayLabel) parts.push(awayLabel)
+  else if (rule.awayWinnerOf !== null) {
     const prev = allRules.find((r: any) => r.id === rule.awayWinnerOf)
     parts.push(`Gan. cruce ${prev?.bracketPosition ?? '?'}`)
   }
@@ -353,16 +342,18 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId, hasGroups =
   const [bracketPosition, setBracketPosition] = useState('')
 
   // Local
-  const [homeSource, setHomeSource] = useState<'group' | 'winner'>(() => hasGroups ? 'group' : 'winner')
+  const [homeSource, setHomeSource] = useState<'group' | 'winner' | 'wildcard'>(() => hasGroups ? 'group' : 'winner')
   const [homeGroupId, setHomeGroupId] = useState('')
   const [homePosition, setHomePosition] = useState('')
   const [homeWinnerOf, setHomeWinnerOf] = useState('')
+  const [homeWildcardGroupIds, setHomeWildcardGroupIds] = useState<string[]>([])
 
   // Visitante
-  const [awaySource, setAwaySource] = useState<'group' | 'winner'>(() => hasGroups ? 'group' : 'winner')
+  const [awaySource, setAwaySource] = useState<'group' | 'winner' | 'wildcard'>(() => hasGroups ? 'group' : 'winner')
   const [awayGroupId, setAwayGroupId] = useState('')
   const [awayPosition, setAwayPosition] = useState('')
   const [awayWinnerOf, setAwayWinnerOf] = useState('')
+  const [awayWildcardGroupIds, setAwayWildcardGroupIds] = useState<string[]>([])
 
   const queryClient = useQueryClient()
 
@@ -378,17 +369,21 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId, hasGroups =
       tournamentId,
       knockoutRound,
       bracketPosition: Number(bracketPosition),
-      homeGroupId: homeSource === 'group' ? Number(homeGroupId) : null,
-      homePosition: homeSource === 'group' ? Number(homePosition) : null,
-      awayGroupId: awaySource === 'group' ? Number(awayGroupId) : null,
-      awayPosition: awaySource === 'group' ? Number(awayPosition) : null,
+      homeGroupId: homeSource === 'group' ? Number(homeGroupId) : (homeSource === 'wildcard' ? Number(homeGroupId) || null : null),
+      homePosition: homeSource === 'group' ? Number(homePosition) : (homeSource === 'wildcard' ? Number(homePosition) || null : null),
+      awayGroupId: awaySource === 'group' ? Number(awayGroupId) : (awaySource === 'wildcard' ? Number(awayGroupId) || null : null),
+      awayPosition: awaySource === 'group' ? Number(awayPosition) : (awaySource === 'wildcard' ? Number(awayPosition) || null : null),
       homeWinnerOf: homeSource === 'winner' ? Number(homeWinnerOf) : null,
       awayWinnerOf: awaySource === 'winner' ? Number(awayWinnerOf) : null,
+      wildcardGroupIds: (homeSource === 'wildcard' || awaySource === 'wildcard')
+        ? [...homeWildcardGroupIds, ...awayWildcardGroupIds].filter((v, i, a) => a.indexOf(v) === i).join(',') || null
+        : null,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-bracket-rules'] })
       setBracketPosition(''); setHomeGroupId(''); setHomePosition('')
       setHomeWinnerOf(''); setAwayGroupId(''); setAwayPosition(''); setAwayWinnerOf('')
+      setHomeWildcardGroupIds([]); setAwayWildcardGroupIds([])
       setOpen(false)
     },
   })
@@ -397,14 +392,18 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId, hasGroups =
   const isFirstRoundNoGroups = !hasGroups && prevRoundRules.length === 0
   const isValid = bracketPosition && (
     isFirstRoundNoGroups ? true :
-      (homeSource === 'group' ? (homeGroupId && homePosition) : homeWinnerOf)
+      (homeSource === 'group' ? (homeGroupId && homePosition) :
+        homeSource === 'wildcard' ? (homePosition && homeWildcardGroupIds.length > 0) :
+          homeWinnerOf)
   ) && (
       isFirstRoundNoGroups ? true :
-        (awaySource === 'group' ? (awayGroupId && awayPosition) : awayWinnerOf)
+        (awaySource === 'group' ? (awayGroupId && awayPosition) :
+          awaySource === 'wildcard' ? (awayPosition && awayWildcardGroupIds.length > 0) :
+            awayWinnerOf)
     )
 
   const SlotConfig = ({
-    label, source, setSource, groupId, setGroupId, position, setPosition, winnerId, setWinnerId
+    label, source, setSource, groupId, setGroupId, position, setPosition, winnerId, setWinnerId, wildcardGroupIds, setWildcardGroupIds
   }: any) => (
     <div className="space-y-2 p-3 rounded-lg bg-gray-800 border border-gray-700">
       <div className="flex items-center justify-between">
@@ -419,6 +418,10 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId, hasGroups =
               disabled={prevRoundRules.length === 0}
               className={`px-2 py-0.5 rounded text-xs transition-colors disabled:opacity-30 ${source === 'winner' ? 'bg-[#74ACDF] text-gray-950 font-medium' : 'text-gray-500 hover:text-white'}`}>
               Ganador
+            </button>
+            <button onClick={() => setSource('wildcard')}
+              className={`px-2 py-0.5 rounded text-xs transition-colors ${source === 'wildcard' ? 'bg-yellow-500 text-gray-950 font-medium' : 'text-gray-500 hover:text-white'}`}>
+              Wildcard
             </button>
           </div>
         )}
@@ -435,7 +438,7 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId, hasGroups =
             placeholder="Posición"
             className="px-2 py-1.5 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
         </div>
-      ) : (
+      ) : source === 'winner' ? (
         <select value={winnerId} onChange={(e) => setWinnerId(e.target.value)}
           className="w-full px-2 py-1.5 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm focus:outline-none focus:border-[#74ACDF]">
           <option value="">Ganador de...</option>
@@ -445,6 +448,31 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId, hasGroups =
             </option>
           ))}
         </select>
+      ) : (
+        <div className="space-y-2">
+          <input type="number" min="1" max="15" value={position} onChange={(e) => setPosition(e.target.value)}
+            placeholder="Posición (ej: 3 para terceros)"
+            className="w-full px-2 py-1.5 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
+          <div className="text-xs text-gray-400 mb-1">Grupos posibles:</div>
+          <div className="flex flex-wrap gap-1">
+            {groups.map((g: any) => {
+              const selected = wildcardGroupIds.includes(String(g.id))
+              return (
+                <button key={g.id} type="button"
+                  onClick={() => setWildcardGroupIds(selected
+                    ? wildcardGroupIds.filter((id: string) => id !== String(g.id))
+                    : [...wildcardGroupIds, String(g.id)]
+                  )}
+                  className={`px-2 py-0.5 rounded text-xs transition-colors ${selected ? 'bg-yellow-500 text-gray-950 font-medium' : 'bg-gray-700 text-gray-400 hover:text-white'}`}>
+                  {g.name.replace('Grupo ', '')}
+                </button>
+              )
+            })}
+          </div>
+          {wildcardGroupIds.length > 0 && (
+            <p className="text-xs text-yellow-500/80">{position ? `${position}° ` : ''}de grupos: {wildcardGroupIds.map((id: string) => groups.find((g: any) => String(g.id) === id)?.name?.replace('Grupo ', '')).join('/')}</p>
+          )}
+        </div>
       )}
     </div>
   )
@@ -476,12 +504,14 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId, hasGroups =
       <SlotConfig label="Local" source={homeSource} setSource={setHomeSource}
         groupId={homeGroupId} setGroupId={setHomeGroupId}
         position={homePosition} setPosition={setHomePosition}
-        winnerId={homeWinnerOf} setWinnerId={setHomeWinnerOf} />
+        winnerId={homeWinnerOf} setWinnerId={setHomeWinnerOf}
+        wildcardGroupIds={homeWildcardGroupIds} setWildcardGroupIds={setHomeWildcardGroupIds} />
 
       <SlotConfig label="Visitante" source={awaySource} setSource={setAwaySource}
         groupId={awayGroupId} setGroupId={setAwayGroupId}
         position={awayPosition} setPosition={setAwayPosition}
-        winnerId={awayWinnerOf} setWinnerId={setAwayWinnerOf} />
+        winnerId={awayWinnerOf} setWinnerId={setAwayWinnerOf}
+        wildcardGroupIds={awayWildcardGroupIds} setWildcardGroupIds={setAwayWildcardGroupIds} />
 
       <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !isValid}
         className="w-full py-2 rounded-lg bg-[#74ACDF] text-gray-950 font-medium text-sm hover:bg-[#5a9fd4] transition-colors disabled:opacity-50">
@@ -641,321 +671,6 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
 
 // ─── Knockout Section ─────────────────────────────────────────────────────────
 
-const ROUND_LABELS: Record<string, string> = {
-  round_of_64: '32avos de Final',
-  round_of_32: '16avos de Final',
-  round_of_16: 'Octavos de Final',
-  quarterfinal: 'Cuartos de Final',
-  semifinal: 'Semifinales',
-  final: 'Final',
-}
-
-const ROUND_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'final']
-const NEXT_ROUND: Record<string, string> = {
-  round_of_64: 'round_of_32',
-  round_of_32: 'round_of_16',
-  round_of_16: 'quarterfinal',
-  quarterfinal: 'semifinal',
-  semifinal: 'final',
-}
-
-
-// ─── Manual Knockout Form ─────────────────────────────────────────────────────
-
-const TEAM_COUNTS = [4, 8, 16, 32, 64]
-const FIRST_ROUND_FOR_COUNT: Record<number, string> = {
-  4: 'semifinal', 8: 'quarterfinal', 16: 'round_of_16', 32: 'round_of_32', 64: 'round_of_64',
-}
-
-function ManualKnockoutForm({ tournamentId, allTeams, token, createMatchMutation, tournamentCountry }: {
-  tournamentId: number; allTeams: any[]; token: string; createMatchMutation: any; tournamentCountry: string | null
-}) {
-  const queryClient = useQueryClient()
-  const [teamCount, setTeamCount] = useState<number | null>(null)
-  const [selections, setSelections] = useState<Record<number, { homeTeamId: string; awayTeamId: string }>>({})
-  const [newTeamPos, setNewTeamPos] = useState<{ pos: number; side: 'home' | 'away' } | null>(null)
-  const [newTeamName, setNewTeamName] = useState('')
-  const [newTeamShort, setNewTeamShort] = useState('')
-
-  const createTeamMutation = useMutation<any, Error, void>({
-    mutationFn: async () => {
-      const { data } = await apiClient.post('/admin?action=teams',
-        { name: newTeamName, shortName: newTeamShort, country: tournamentCountry ?? null },
-        { headers: { 'x-admin-token': token } }
-      )
-      return data.data
-    },
-    onSuccess: (team) => {
-      if (!newTeamPos) return
-      setSelections(prev => ({
-        ...prev,
-        [newTeamPos.pos]: {
-          ...prev[newTeamPos.pos] ?? { homeTeamId: '', awayTeamId: '' },
-          [newTeamPos.side === 'home' ? 'homeTeamId' : 'awayTeamId']: String(team.id)
-        }
-      }))
-      queryClient.invalidateQueries({ queryKey: ['all-teams-manual'] })
-      setNewTeamPos(null); setNewTeamName(''); setNewTeamShort('')
-    },
-  })
-
-  if (teamCount === null) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm text-gray-400">¿Cuántos equipos participan en la primera ronda?</p>
-        <div className="flex gap-2 flex-wrap">
-          {TEAM_COUNTS.map(n => (
-            <button key={n} onClick={() => setTeamCount(n)}
-              className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-[#74ACDF] hover:text-gray-950 text-gray-300 text-sm font-medium transition-colors">
-              {n} equipos
-            </button>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  const round = FIRST_ROUND_FOR_COUNT[teamCount] ?? 'round_of_16'
-  const matchCount = teamCount / 2
-  const cruces = Array.from({ length: matchCount }, (_, i) => i + 1)
-
-  const handleSave = async () => {
-    for (const pos of cruces) {
-      const sel = selections[pos]
-      if (!sel?.homeTeamId || !sel?.awayTeamId) continue
-      await createMatchMutation.mutateAsync({
-        tournamentId, phase: 'knockout', knockoutRound: round,
-        bracketPosition: pos,
-        homeTeamId: Number(sel.homeTeamId), awayTeamId: Number(sel.awayTeamId),
-        scheduledAt: null,
-      })
-      // Auto-create bracket rule for this match so next rounds can reference it
-      await createBracketRule(token, {
-        tournamentId, knockoutRound: round, bracketPosition: pos,
-        homeGroupId: null, homePosition: null,
-        awayGroupId: null, awayPosition: null,
-        homeWinnerOf: null, awayWinnerOf: null,
-      })
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-400">{ROUND_LABELS[round] ?? round} — {teamCount} equipos ({matchCount} cruces)</p>
-        <button onClick={() => setTeamCount(null)} className="text-xs text-gray-500 hover:text-white">Cambiar</button>
-      </div>
-      <div className="space-y-2">
-        {cruces.map(pos => {
-          const sel = selections[pos] ?? { homeTeamId: '', awayTeamId: '' }
-          return (
-            <div key={pos} className="rounded-xl border border-gray-800 bg-gray-900/40 p-3 space-y-1.5">
-              <p className="text-xs text-gray-600">Cruce {pos}</p>
-              <div className="grid grid-cols-2 gap-2">
-                {(['home', 'away'] as const).map(side => {
-                  const val = side === 'home' ? sel.homeTeamId : sel.awayTeamId
-                  return (
-                    <div key={side} className="space-y-1">
-                      <select value={val}
-                        onChange={e => {
-                          if (e.target.value === '__new__') { setNewTeamPos({ pos, side }); return }
-                          setSelections(prev => ({ ...prev, [pos]: { ...sel, [side === 'home' ? 'homeTeamId' : 'awayTeamId']: e.target.value } }))
-                        }}
-                        className="w-full px-2 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]">
-                        <option value="">{side === 'home' ? 'Local...' : 'Visitante...'}</option>
-                        {allTeams.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        <option value="__new__">＋ Crear equipo nuevo</option>
-                      </select>
-                      {newTeamPos?.pos === pos && newTeamPos?.side === side && (
-                        <div className="flex gap-1">
-                          <input value={newTeamName} onChange={e => setNewTeamName(e.target.value)}
-                            placeholder="Nombre" className="flex-1 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]" />
-                          <input value={newTeamShort} onChange={e => setNewTeamShort(e.target.value)}
-                            placeholder="Abrev." className="w-16 px-2 py-1 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]" />
-                          <button onClick={() => createTeamMutation.mutate()} disabled={!newTeamName || createTeamMutation.isPending}
-                            className="px-2 py-1 rounded bg-[#74ACDF] text-gray-950 text-xs disabled:opacity-50">
-                            <Check size={10} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-      <button onClick={handleSave} disabled={createMatchMutation.isPending}
-        className="w-full py-2 rounded-xl bg-[#74ACDF] text-gray-950 font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
-        <Check size={14} /> {createMatchMutation.isPending ? 'Guardando...' : 'Guardar cruces'}
-      </button>
-    </div>
-  )
-}
-
-function KnockoutSection({ token, tournamentId, tournament }: { token: string; tournamentId: number; tournament: any }) {
-  const queryClient = useQueryClient()
-  const [editingDate, setEditingDate] = useState<number | null>(null)
-  const [dateValue, setDateValue] = useState('')
-
-  const hasGroups = (tournament as any)?.hasGroups ?? true
-  const tournamentCountry = (tournament as any)?.country ?? null
-
-  const { data: knockoutMatches = [], isLoading } = useQuery({
-    queryKey: ['knockout-matches', tournamentId],
-    queryFn: () => fetchKnockoutMatches(tournamentId),
-  })
-
-  const { data: allTeamsRaw = [] } = useQuery({
-    queryKey: ['all-teams-manual', tournamentId],
-    queryFn: () => fetchAllTeamsForManual(token, tournamentId),
-    staleTime: 1000 * 60 * 10,
-    enabled: !hasGroups,
-  })
-
-  // Filter by country if set
-  const allTeamsForManual = tournamentCountry
-    ? (allTeamsRaw as any[]).filter((t: any) => !t.country || t.country === tournamentCountry)
-    : allTeamsRaw as any[]
-
-  const createMatchMutation = useMutation<any, Error, any>({
-    mutationFn: (payload) => apiClient.post('/admin?action=matches', payload, { headers: { 'x-admin-token': token } }).then(r => r.data.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['knockout-matches', tournamentId] })
-      queryClient.invalidateQueries({ queryKey: ['all-teams-manual', tournamentId] })
-    },
-  })
-
-  const generateMutation = useMutation<any, Error, string>({
-    mutationFn: (round) => generateKnockout(token, tournamentId, round),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['knockout-matches', tournamentId] }),
-  })
-
-  const dateMutation = useMutation<any, Error, { matchId: number; scheduledAt: string | null }>({
-    mutationFn: ({ matchId, scheduledAt }) => setMatchDate(token, matchId, scheduledAt),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['knockout-matches', tournamentId] })
-      setEditingDate(null)
-    },
-  })
-
-  const knockoutStarted = (tournament as any)?.knockoutStarted
-
-  // Group by round
-  const byRound = (knockoutMatches as any[]).reduce((acc: Record<string, any[]>, m: any) => {
-    const r = m.knockoutRound ?? 'unknown'
-    if (!acc[r]) acc[r] = []
-    acc[r].push(m)
-    return acc
-  }, {})
-
-  // Determine which round to generate next
-  const existingRounds = new Set(Object.keys(byRound))
-  const nextRoundToGenerate = (() => {
-    // For no-groups: first round is manual, but subsequent rounds auto-generate
-    if (!hasGroups && existingRounds.size === 0) return null
-    if (existingRounds.size === 0) return 'round_of_16'
-    const lastRound = ROUND_ORDER.filter(r => existingRounds.has(r)).pop()
-    if (!lastRound) return null
-    const lastRoundMatches = byRound[lastRound] ?? []
-    const allFinished = lastRoundMatches.length > 0 && lastRoundMatches.every((m: any) => m.status === 'finished')
-    if (!allFinished) return null
-    return NEXT_ROUND[lastRound] ?? null
-  })()
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Fase Eliminatoria</h2>
-        {knockoutStarted && nextRoundToGenerate && (
-          <button onClick={() => generateMutation.mutate(nextRoundToGenerate)} disabled={generateMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#74ACDF] text-gray-950 font-medium text-sm disabled:opacity-50 transition-colors">
-            <Trophy size={13} /> {generateMutation.isPending ? 'Generando...' : `Generar ${ROUND_LABELS[nextRoundToGenerate] ?? nextRoundToGenerate}`}
-          </button>
-        )}
-        {!knockoutStarted && (
-          <span className="text-xs text-gray-600">Activá la fase eliminatoria en Neon para generar los partidos</span>
-        )}
-      </div>
-
-      {generateMutation.isError && (
-        <p className="text-red-400 text-xs">{(generateMutation.error as any)?.response?.data?.error ?? 'Error al generar'}</p>
-      )}
-
-      {isLoading && <p className="text-gray-500 text-sm">Cargando...</p>}
-
-      {knockoutMatches.length === 0 && !isLoading && knockoutStarted && !hasGroups && (
-        <ManualKnockoutForm
-          tournamentId={tournamentId}
-          allTeams={allTeamsForManual}
-          token={token}
-          createMatchMutation={createMatchMutation}
-          tournamentCountry={tournamentCountry}
-        />
-      )}
-
-      {knockoutMatches.length === 0 && !isLoading && knockoutStarted && hasGroups && (
-        <div className="rounded-xl border border-dashed border-gray-700 p-8 text-center">
-          <p className="text-gray-400 text-sm">No hay partidos de eliminatoria generados todavía</p>
-        </div>
-      )}
-
-      {ROUND_ORDER.filter(r => byRound[r]).reverse().map(round => (
-        <div key={round} className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{ROUND_LABELS[round] ?? round}</h3>
-            {byRound[round]?.every((m: any) => m.status === 'finished') && (
-              <span className="text-[10px] text-emerald-500">✓ Completa</span>
-            )}
-          </div>
-          {(byRound[round] as any[]).map((match: any) => (
-            <div key={match.id} className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-3 space-y-2">
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-white flex-1 text-right truncate font-medium">
-                  {match.homeTeam?.shortName ?? match.homeTeam?.name ?? '?'}
-                </span>
-                <span className={`text-sm font-bold w-16 text-center ${match.status === 'finished' ? 'text-white' : 'text-gray-600'}`}>
-                  {match.status === 'finished' ? `${match.homeScore} - ${match.awayScore}` : 'vs'}
-                </span>
-                <span className="text-sm text-white flex-1 truncate font-medium">
-                  {match.awayTeam?.shortName ?? match.awayTeam?.name ?? '?'}
-                </span>
-              </div>
-              {editingDate === match.id ? (
-                <div className="flex gap-2">
-                  <input type="datetime-local" value={dateValue} onChange={e => setDateValue(e.target.value)}
-                    className="flex-1 px-2 py-1 rounded-lg bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]" />
-                  <button onClick={() => dateMutation.mutate({ matchId: match.id, scheduledAt: dateValue ? dateValue + ':00.000Z' : null })}
-                    disabled={dateMutation.isPending}
-                    className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs disabled:opacity-50">
-                    <Check size={12} />
-                  </button>
-                  <button onClick={() => setEditingDate(null)}
-                    className="px-3 py-1 rounded-lg bg-gray-700 text-gray-300 text-xs">
-                    <X size={12} />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">
-                    {match.scheduledAt
-                      ? (() => { const [y, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' }) })()
-                      : 'Sin fecha'}
-                  </span>
-                  <button onClick={() => { setEditingDate(match.id); setDateValue(match.scheduledAt?.slice(0, 16) ?? '') }}
-                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#74ACDF] transition-colors">
-                    <Calendar size={11} /> Editar fecha
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  )
-}
 
 
 // ─── Bracket Sub-Tabs ─────────────────────────────────────────────────────────
@@ -977,7 +692,7 @@ function BracketSubTabs({ token, tournamentId, tournament, groupsData }: {
         </button>
       </div>
       {subTab === 'matches' && (
-        <KnockoutSection token={token} tournamentId={tournamentId} tournament={tournament} />
+        <KnockoutSection token={token} tournamentId={tournamentId} tournament={tournament} groups={groupsData ?? []} />
       )}
       {subTab === 'rules' && (
         <BracketRulesSection token={token} groups={groupsData} tournamentId={tournamentId} hasGroups={tournament?.hasGroups ?? true} />

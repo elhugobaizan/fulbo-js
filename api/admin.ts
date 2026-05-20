@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, sql } from 'drizzle-orm'
 import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents, matchLineups, nationalTeams } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
 
@@ -32,17 +32,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // tournament data
     if (action === 'tournament' && req.method === 'GET') {
       const tournamentId = Number(req.query.tournamentId)
-      console.log('action=tournament request, tournamentId:', req.query.tournamentId)
       if (!tournamentId) return err(res, 'tournamentId required', 400)
       const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId))
       if (!tournament) return err(res, 'Not found', 404)
       const groupsData = await db.select().from(groups).where(eq(groups.tournamentId, tournamentId))
+      const isNational = (tournament as any)?.teamType === 'national' || (tournament as any)?.team_type === 'national'
       const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
-        const clubMembers = await db.select({ id: teams.id, name: teams.name, shortName: teams.shortName, logoUrl: teams.logoUrl, color: teams.color })
-          .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id)).where(eq(groupTeams.groupId, group.id))
-        const nationalMembers = await db.select({ id: nationalTeams.id, name: nationalTeams.name, shortName: nationalTeams.name, logoUrl: nationalTeams.flagUrl, color: nationalTeams.color })
-          .from(groupTeams).innerJoin(nationalTeams, eq((groupTeams as any).nationalTeamId, nationalTeams.id)).where(eq(groupTeams.groupId, group.id))
-        console.log('group', group.id, 'clubMembers:', clubMembers.length, 'nationalMembers:', nationalMembers.length)
+        const clubMembers = !isNational ? await db.select({ id: teams.id, name: teams.name, shortName: teams.shortName, logoUrl: teams.logoUrl, color: teams.color })
+          .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id)).where(eq(groupTeams.groupId, group.id)) : []
+        const nationalMembers = isNational ? await db.select({ id: nationalTeams.id, name: nationalTeams.name, shortName: nationalTeams.name, logoUrl: nationalTeams.flagUrl, color: nationalTeams.color })
+          .from(groupTeams).innerJoin(nationalTeams, eq((groupTeams as any).nationalTeamId, nationalTeams.id)).where(eq(groupTeams.groupId, group.id)) : []
         return { ...group, teams: [...clubMembers, ...nationalMembers] }
       }))
       const existingMatches = await db.select().from(matches).where(eq(matches.tournamentId, tournamentId))
@@ -56,14 +55,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!tournamentId || !homeTeamId || !awayTeamId) return err(res, 'Missing fields', 400)
         let resolvedGroupId = groupId ?? null
         if (phase === 'group' && !resolvedGroupId && homeTeamId) {
-          // Try club team first, then national team
           const rows = await db.select().from(groupTeams).where(eq(groupTeams.teamId, homeTeamId))
-          if (rows.length > 0) {
-            resolvedGroupId = rows[0]?.groupId ?? null
-          } else {
-            const natRows = await db.select().from(groupTeams).where(eq((groupTeams as any).nationalTeamId, homeTeamId))
-            resolvedGroupId = natRows[0]?.groupId ?? null
-          }
+          resolvedGroupId = rows[0]?.groupId ?? null
         }
         const [match] = await db.insert(matches).values({ tournamentId, phase, groupId: resolvedGroupId, matchday: matchday ?? null, knockoutRound: knockoutRound ?? null, bracketPosition: bracketPosition ?? null, homeTeamId, awayTeamId, status: 'scheduled', scheduledAt: scheduledAt ? new Date(scheduledAt) : null }).returning()
         return res.status(201).json({ data: match })
@@ -87,13 +80,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'bracket-rules') {
       if (req.method === 'GET') {
         const tournamentId = Number(req.query.tournamentId)
-        const rules = await db.select().from(bracketRules).where(eq(bracketRules.tournamentId, tournamentId))
+        if (!tournamentId || isNaN(tournamentId)) return ok(res, [])
+        const rulesRaw = await db.execute(sql`SELECT * FROM bracket_rules WHERE tournament_id = ${tournamentId}`)
+        const rules = ((rulesRaw as any).rows ?? []).map((r: any) => ({
+          id: r.id, tournamentId: r.tournament_id, knockoutRound: r.knockout_round,
+          bracketPosition: r.bracket_position, homeGroupId: r.home_group_id,
+          homePosition: r.home_position, awayGroupId: r.away_group_id,
+          awayPosition: r.away_position, homeWinnerOf: r.home_winner_of,
+          awayWinnerOf: r.away_winner_of, wildcardGroupIds: r.wildcard_group_ids,
+          createdAt: r.created_at,
+        }))
         return ok(res, rules)
       }
       if (req.method === 'POST') {
-        const { tournamentId, knockoutRound, bracketPosition, homeGroupId, homePosition, awayGroupId, awayPosition, homeWinnerOf, awayWinnerOf } = req.body
+        const { tournamentId, knockoutRound, bracketPosition, homeGroupId, homePosition, awayGroupId, awayPosition, homeWinnerOf, awayWinnerOf, wildcardGroupIds } = req.body
         if (!tournamentId || !knockoutRound || !bracketPosition) return err(res, 'Missing fields', 400)
-        const [rule] = await db.insert(bracketRules).values({ tournamentId, knockoutRound, bracketPosition, homeGroupId: homeGroupId ?? null, homePosition: homePosition ?? null, awayGroupId: awayGroupId ?? null, awayPosition: awayPosition ?? null, homeWinnerOf: homeWinnerOf ?? null, awayWinnerOf: awayWinnerOf ?? null }).returning()
+        // Use raw SQL to include wildcard_group_ids which was added via ALTER TABLE
+        const rows = await db.execute(sql`
+          INSERT INTO bracket_rules
+            (tournament_id, knockout_round, bracket_position, home_group_id, home_position,
+             away_group_id, away_position, home_winner_of, away_winner_of, wildcard_group_ids)
+          VALUES
+            (${Number(tournamentId)}, ${knockoutRound}, ${Number(bracketPosition)},
+             ${homeGroupId ?? null}, ${homePosition ?? null},
+             ${awayGroupId ?? null}, ${awayPosition ?? null},
+             ${homeWinnerOf ?? null}, ${awayWinnerOf ?? null},
+             ${wildcardGroupIds ?? null})
+          RETURNING *
+        `)
+        const rule = (rows as any).rows?.[0] ?? {}
         return res.status(201).json({ data: rule })
       }
       if (req.method === 'DELETE') {
@@ -130,14 +145,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // teams CRUD
     if (action === 'teams') {
       if (req.method === 'GET') {
-        const tidParam = req.query.tournamentId ? Number(req.query.tournamentId) : null
-        if (tidParam) {
-          const [t] = await db.select().from(tournaments).where(eq(tournaments.id, tidParam))
-          if (t && (t as any).teamType === 'national') {
-            const natTeams = await db.select().from(nationalTeams).orderBy(nationalTeams.name)
-            return ok(res, natTeams.map((n: any) => ({ ...n, shortName: n.name, logoUrl: n.flagUrl })))
-          }
-        }
         const allTeams = await db.select().from(teams).orderBy(teams.name)
         return ok(res, allTeams)
       }
@@ -359,19 +366,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       )
       if (existing.length > 0) return err(res, 'Knockout matches already generated', 400)
 
-      // Get bracket rules for round_of_16
-      const rules = await db.select().from(bracketRules).where(
-        and(eq(bracketRules.tournamentId, tid), eq(bracketRules.knockoutRound as any, 'round_of_16'))
-      )
+      // Get bracket rules for this round via raw SQL (includes wildcard_group_ids)
+      const rulesRaw = await db.execute(sql`
+        SELECT * FROM bracket_rules WHERE tournament_id = ${tid} AND knockout_round = ${round}
+      `)
+      const rules = ((rulesRaw as any).rows ?? []).map((r: any) => ({
+        id: r.id, tournamentId: r.tournament_id, knockoutRound: r.knockout_round,
+        bracketPosition: r.bracket_position, homeGroupId: r.home_group_id,
+        homePosition: r.home_position, awayGroupId: r.away_group_id,
+        awayPosition: r.away_position, homeWinnerOf: r.home_winner_of,
+        awayWinnerOf: r.away_winner_of, wildcardGroupIds: r.wildcard_group_ids,
+      }))
 
-      // Get groups with teams
+      // Get tournament and groups
       const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tid))
       if (!tournament) return err(res, 'Tournament not found', 404)
       const groupsData = await db.select().from(groups).where(eq(groups.tournamentId, tid))
+      const isNational = (tournament as any)?.teamType === 'national' || (tournament as any)?.team_type === 'national'
       const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
-        const members = await db.select({ teamId: groupTeams.teamId, team: teams })
-          .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id))
-          .where(eq(groupTeams.groupId, group.id))
+        let members: any[]
+        if (isNational) {
+          const rows = await db.select({ teamId: (groupTeams as any).nationalTeamId, team: nationalTeams })
+            .from(groupTeams).innerJoin(nationalTeams, eq((groupTeams as any).nationalTeamId, nationalTeams.id))
+            .where(eq(groupTeams.groupId, group.id))
+          members = rows.map((r: any) => ({ teamId: r.teamId, team: { ...r.team, logoUrl: r.team.flagUrl } }))
+        } else {
+          members = await db.select({ teamId: groupTeams.teamId, team: teams })
+            .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id))
+            .where(eq(groupTeams.groupId, group.id))
+        }
         return { ...group, members }
       }))
 
@@ -411,44 +434,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         })
       }
 
-      // Build ranked wildcards (best teams at position qualifiersPerGroup+1 across all groups)
-      const wildcardQualifiers = (tournament as any).wildcardQualifiers ?? 0
+      // Build global wildcard pool from all groups referenced in wildcardGroupIds
       const qualifiersPerGroup = (tournament as any).qualifiersPerGroup ?? 2
-      const wildcardPos = qualifiersPerGroup // 0-indexed: position after last auto-qualifier
+      const wildcardPos = qualifiersPerGroup // 0-indexed position after last auto-qualifier
+
+      const allWcGroupIds = new Set<number>()
+      for (const rule of rules) {
+        if ((rule as any).wildcardGroupIds) {
+          (rule as any).wildcardGroupIds.split(',').map(Number).forEach((id: number) => allWcGroupIds.add(id))
+        }
+      }
+
       const wildcardRanked: any[] = []
-      if (wildcardQualifiers > 0) {
-        for (const standing of Object.values(standingsByGroup)) {
-          const wildcard = (standing as any[])[wildcardPos]
+      if (allWcGroupIds.size > 0) {
+        for (const gid of allWcGroupIds) {
+          const wildcard = standingsByGroup[gid]?.[wildcardPos]
           if (wildcard) wildcardRanked.push(wildcard)
         }
         wildcardRanked.sort((a: any, b: any) => {
           if (b.points !== a.points) return b.points - a.points
           const da = a.goalsFor - a.goalsAgainst, db2 = b.goalsFor - b.goalsAgainst
           if (db2 !== da) return db2 - da
-          if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor
-          return 0
+          return b.goalsFor - a.goalsFor
         })
-        // Keep only the best N wildcards
-        wildcardRanked.splice(wildcardQualifiers)
       }
-
-      // wildcardIndex tracks which wildcard slot we're filling (by bracketPosition order)
       let wildcardIndex = 0
 
-      const resolveTeam = (groupId: number | null, position: number | null) => {
-        if (groupId === null || position === null) return null
-        // position 0 = wildcard slot
-        if (position === 0) {
+      const resolveTeam = (groupId: number | null, position: number | null, wcGroupIds?: string | null) => {
+        // Wildcard slot: groupId is null and wildcardGroupIds is present
+        if (groupId === null && wcGroupIds) {
           const wc = wildcardRanked[wildcardIndex++] ?? null
           return wc?.team ?? null
         }
+        if (groupId === null || position === null) return null
         return standingsByGroup[groupId]?.[position - 1]?.team ?? null
       }
 
       const created = []
-      for (const rule of rules.sort((a, b) => a.bracketPosition - b.bracketPosition)) {
-        const homeTeam = resolveTeam(rule.homeGroupId, rule.homePosition)
-        const awayTeam = resolveTeam(rule.awayGroupId, rule.awayPosition)
+      for (const rule of rules.sort((a: any, b: any) => a.bracketPosition - b.bracketPosition)) {
+        const homeTeam = resolveTeam(rule.homeGroupId, rule.homePosition, (rule as any).wildcardGroupIds)
+        const awayTeam = resolveTeam(rule.awayGroupId, rule.awayPosition, (rule as any).wildcardGroupIds)
 
         const [match] = await db.insert(matches).values({
           tournamentId: tid,
