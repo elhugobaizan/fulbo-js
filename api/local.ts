@@ -2,8 +2,24 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { eq, inArray, and } from 'drizzle-orm'
-import { matches, teams, groups, groupTeams, tournaments, localPlayers, matchEvents, matchLineups } from './_lib/tournament-schema'
+import { matches, teams, groups, groupTeams, tournaments, localPlayers, matchEvents, matchLineups, nationalTeams } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
+
+
+// Resolve team data based on tournament type
+async function resolveTeams(db: any, teamIds: number[], isNational: boolean): Promise<Record<number, any>> {
+  if (teamIds.length === 0) return {}
+  if (isNational) {
+    const natTeams = await db.select({
+      id: nationalTeams.id, name: nationalTeams.name,
+      shortName: nationalTeams.name, logoUrl: nationalTeams.flagUrl,
+      color: nationalTeams.color, alternateColor: nationalTeams.alternateColor,
+    }).from(nationalTeams).where(inArray(nationalTeams.id, teamIds))
+    return Object.fromEntries(natTeams.map((t: any) => [t.id, t]))
+  }
+  const clubTeams = await db.select().from(teams).where(inArray(teams.id, teamIds))
+  return Object.fromEntries(clubTeams.map((t: any) => [t.id, t]))
+}
 
 function getDb() {
   return drizzle(neon(process.env.DATABASE_URL!))
@@ -132,10 +148,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ))] as number[]
       const tournamentIds = [...new Set(teamMatches.map((m: any) => m.tournamentId))] as number[]
 
-      const teamsData = await db.select().from(teams).where(inArray(teams.id, teamIds))
+      const teamById = await resolveTeams(db, teamIds, false)
       const tournamentsData = await db.select().from(tournaments).where(inArray(tournaments.id, tournamentIds))
 
-      const teamById = Object.fromEntries(teamsData.map((t: any) => [t.id, t]))
       const tournamentById = Object.fromEntries(tournamentsData.map((t: any) => [t.id, t]))
 
       // Count events per match
@@ -171,17 +186,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (resource === 'standings') {
       const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId))
       if (!tournament) return err(res, 'Tournament not found', 404)
+      const isNational = (tournament as any)?.teamType === 'national' || (tournament as any)?.team_type === 'national'
       const groupsData = await db.select().from(groups).where(eq(groups.tournamentId, tournamentId))
       const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
-        const members = await db.select({ teamId: groupTeams.teamId, team: teams })
-          .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id))
-          .where(eq(groupTeams.groupId, group.id))
+        let members: any[]
+        if (isNational) {
+          const rows = await db.select({ teamId: (groupTeams as any).nationalTeamId, team: nationalTeams })
+            .from(groupTeams).innerJoin(nationalTeams, eq((groupTeams as any).nationalTeamId, nationalTeams.id))
+            .where(eq(groupTeams.groupId, group.id))
+          members = rows.map((r: any) => ({ ...r, team: { ...r.team, logoUrl: r.team.flagUrl } }))
+        } else {
+          members = await db.select({ teamId: groupTeams.teamId, team: teams })
+            .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id))
+            .where(eq(groupTeams.groupId, group.id))
+        }
         return { ...group, members }
       }))
       const allGroupMatches = (await db.select().from(matches).where(eq(matches.tournamentId, tournamentId)))
         .filter((m: any) => m.phase === 'group')
       const standingsData = groupsWithTeams.map(group => {
-        const ids = new Set(group.members.map((m: any) => m.teamId))
+        const ids = new Set(group.members.map((m: any) => m.teamId).filter(Boolean))
         const relevant = allGroupMatches.filter((m: any) => ids.has(m.homeTeamId!) || ids.has(m.awayTeamId!))
         const table = calculateStandings(relevant, group.members)
         return {
@@ -199,6 +223,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // fixtures
     if (resource === 'fixtures') {
+      const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId))
+      const isNational = (tournament as any)?.teamType === 'national' || (tournament as any)?.team_type === 'national'
       const matchday = req.query.matchday ? Number(req.query.matchday) : null
       const allMatches = (await db.select().from(matches).where(eq(matches.tournamentId, tournamentId)))
         .filter((m: any) => m.phase === 'group' && m.matchday !== null)
@@ -211,8 +237,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!target) return ok(res, { matchday: null, matchdays: allMatchdays, matches: [] })
       const dayMatches = allMatches.filter((m: any) => m.matchday === target)
       const teamIds = [...new Set(dayMatches.flatMap((m: any) => [m.homeTeamId, m.awayTeamId].filter(Boolean)))] as number[]
-      const teamsData = teamIds.length > 0 ? await db.select().from(teams).where(inArray(teams.id, teamIds)) : []
-      const teamById = Object.fromEntries(teamsData.map((t: any) => [t.id, t]))
+      const teamById = await resolveTeams(db, teamIds, isNational)
       const dayMatchIds = dayMatches.map((m: any) => m.id)
       const dayEventsData = dayMatchIds.length > 0
         ? await db.select().from(matchEvents).where(inArray(matchEvents.matchId, dayMatchIds))
@@ -231,6 +256,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // upcoming
     if (resource === 'upcoming') {
+      const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId))
+      const isNational = (tournament as any)?.teamType === 'national' || (tournament as any)?.team_type === 'national'
       const allMatches = (await db.select().from(matches).where(eq(matches.tournamentId, tournamentId)))
         .filter((m: any) => m.phase === 'group' && m.matchday !== null)
       const pending = allMatches.filter((m: any) => m.status !== 'finished').sort((a: any, b: any) => a.matchday - b.matchday)
@@ -238,8 +265,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const nextMatchday = pending[0].matchday!
       const nextMatches = pending.filter((m: any) => m.matchday === nextMatchday)
       const teamIds = [...new Set(nextMatches.flatMap((m: any) => [m.homeTeamId, m.awayTeamId].filter(Boolean)))] as number[]
-      const teamsData = await db.select().from(teams).where(inArray(teams.id, teamIds))
-      const teamById = Object.fromEntries(teamsData.map((t: any) => [t.id, t]))
+      const teamById = await resolveTeams(db, teamIds, isNational)
       const enriched = nextMatches.sort((a: any, b: any) => {
         if (!a.scheduledAt) return 1; if (!b.scheduledAt) return -1
         return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
@@ -267,9 +293,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const [match] = await db.select().from(matches).where(eq(matches.id, matchId))
       if (!match) return err(res, 'Match not found', 404)
 
+      const [matchTournament] = await db.select().from(tournaments).where(eq(tournaments.id, match.tournamentId))
+      const isNational = (matchTournament as any)?.teamType === 'national' || (matchTournament as any)?.team_type === 'national'
+
       const teamIds = [match.homeTeamId, match.awayTeamId].filter(Boolean) as number[]
-      const teamsData = teamIds.length > 0 ? await db.select().from(teams).where(inArray(teams.id, teamIds)) : []
-      const teamById = Object.fromEntries(teamsData.map((t: any) => [t.id, t]))
+      const teamById = await resolveTeams(db, teamIds, isNational)
 
       const events = await db.select({ event: matchEvents, player: localPlayers })
         .from(matchEvents)
@@ -443,6 +471,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // knockout matches
     if (resource === 'knockout-fixtures') {
+      const [knockoutTournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId))
+      const isNational = (knockoutTournament as any)?.teamType === 'national' || (knockoutTournament as any)?.team_type === 'national'
       const round = req.query.round as string | undefined
       const knockoutMatches = await db.select().from(matches)
         .where(and(
@@ -457,8 +487,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const teamIds = [...new Set(knockoutMatches.flatMap((m: any) =>
         [m.homeTeamId, m.awayTeamId].filter(Boolean)
       ))] as number[]
-      const teamsData = teamIds.length > 0 ? await db.select().from(teams).where(inArray(teams.id, teamIds)) : []
-      const teamById = Object.fromEntries(teamsData.map((t: any) => [t.id, t]))
+      const teamById = await resolveTeams(db, teamIds, isNational)
 
       const matchIds = knockoutMatches.map((m: any) => m.id)
       const eventsData = matchIds.length > 0

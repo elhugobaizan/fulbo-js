@@ -50,7 +50,7 @@ function StandingsPage() {
       )}
 
       {!localQuery.isLoading && !localQuery.isError && localQuery.data && (
-        <div className="mb-3 flex items-center justify-between">
+        <div className="space-y-6">
           {localQuery.data.groups.map((groupData) => (
             <div>
               <h2 className="text-base font-bold tracking-tight text-white">{groupData.group.name}</h2>

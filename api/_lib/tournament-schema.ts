@@ -50,7 +50,6 @@ export const tournaments = pgTable('tournaments', {
   allowCrossGroup: boolean('allow_cross_group').default(false).notNull(),
   knockoutStarted: boolean('knockout_started').default(false).notNull(),
   teamType: varchar('team_type', { length: 10 }).notNull().default('club'),
-  wildcardQualifiers: integer('wildcard_qualifiers').notNull().default(0),
 })
 
 // ─── Teams ───────────────────────────────────────────────────────────────────
@@ -172,6 +171,9 @@ export const bracketRules = pgTable('bracket_rules', {
   // Origen desde ronda anterior (cuartos, semi, final)
   homeWinnerOf: integer('home_winner_of'), // references bracket_rules.id
   awayWinnerOf: integer('away_winner_of'), // references bracket_rules.id
+
+  // Wildcard: comma-separated group ids that can fill this slot
+  wildcardGroupIds: varchar('wildcard_group_ids', { length: 100 }),
 
   createdAt: timestamp('created_at').defaultNow(),
 }, (t) => ({

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
-import { eq, and, inArray, sql } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents, matchLineups, nationalTeams } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
 
@@ -32,14 +32,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // tournament data
     if (action === 'tournament' && req.method === 'GET') {
       const tournamentId = Number(req.query.tournamentId)
+      console.log('action=tournament request, tournamentId:', req.query.tournamentId)
       if (!tournamentId) return err(res, 'tournamentId required', 400)
       const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId))
       if (!tournament) return err(res, 'Not found', 404)
       const groupsData = await db.select().from(groups).where(eq(groups.tournamentId, tournamentId))
       const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
-        const members = await db.select({ id: teams.id, name: teams.name, shortName: teams.shortName, logoUrl: teams.logoUrl })
+        const clubMembers = await db.select({ id: teams.id, name: teams.name, shortName: teams.shortName, logoUrl: teams.logoUrl, color: teams.color })
           .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id)).where(eq(groupTeams.groupId, group.id))
-        return { ...group, teams: members }
+        const nationalMembers = await db.select({ id: nationalTeams.id, name: nationalTeams.name, shortName: nationalTeams.name, logoUrl: nationalTeams.flagUrl, color: nationalTeams.color })
+          .from(groupTeams).innerJoin(nationalTeams, eq((groupTeams as any).nationalTeamId, nationalTeams.id)).where(eq(groupTeams.groupId, group.id))
+        console.log('group', group.id, 'clubMembers:', clubMembers.length, 'nationalMembers:', nationalMembers.length)
+        return { ...group, teams: [...clubMembers, ...nationalMembers] }
       }))
       const existingMatches = await db.select().from(matches).where(eq(matches.tournamentId, tournamentId))
       return ok(res, { tournament, groups: groupsWithTeams, matches: existingMatches })
@@ -52,8 +56,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!tournamentId || !homeTeamId || !awayTeamId) return err(res, 'Missing fields', 400)
         let resolvedGroupId = groupId ?? null
         if (phase === 'group' && !resolvedGroupId && homeTeamId) {
+          // Try club team first, then national team
           const rows = await db.select().from(groupTeams).where(eq(groupTeams.teamId, homeTeamId))
-          resolvedGroupId = rows[0]?.groupId ?? null
+          if (rows.length > 0) {
+            resolvedGroupId = rows[0]?.groupId ?? null
+          } else {
+            const natRows = await db.select().from(groupTeams).where(eq((groupTeams as any).nationalTeamId, homeTeamId))
+            resolvedGroupId = natRows[0]?.groupId ?? null
+          }
         }
         const [match] = await db.insert(matches).values({ tournamentId, phase, groupId: resolvedGroupId, matchday: matchday ?? null, knockoutRound: knockoutRound ?? null, bracketPosition: bracketPosition ?? null, homeTeamId, awayTeamId, status: 'scheduled', scheduledAt: scheduledAt ? new Date(scheduledAt) : null }).returning()
         return res.status(201).json({ data: match })
@@ -98,14 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'setup-tournament' && req.method === 'POST') {
       const { name, shortName, country, season, hasGroups, qualifiersPerGroup, wildcardQualifiers, allowCrossGroup, teamType } = req.body
       if (!name || !season) return err(res, 'name and season required', 400)
-      const [inserted] = await db.insert(tournaments).values({ name, shortName: shortName ?? null, country: country ?? null, season: Number(season), hasGroups: hasGroups ?? true, qualifiersPerGroup: Number(qualifiersPerGroup) || 2, wildcardQualifiers: Number(wildcardQualifiers) || 0, allowCrossGroup: allowCrossGroup ?? false, teamType: teamType ?? 'club', active: true }).returning()
-      // Raw select to include columns added via ALTER TABLE (e.g. team_type, wildcard_qualifiers)
-      const db2 = getDb()
-      const rows = await db2.execute(sql`SELECT * FROM tournaments WHERE id = ${inserted.id}`)
-      const tournament = (rows as any).rows?.[0] ?? inserted
-      // Normalize snake_case to camelCase for new columns
-      if (tournament.team_type !== undefined && tournament.teamType === undefined) tournament.teamType = tournament.team_type
-      if (tournament.wildcard_qualifiers !== undefined && tournament.wildcardQualifiers === undefined) tournament.wildcardQualifiers = tournament.wildcard_qualifiers
+      const [tournament] = await db.insert(tournaments).values({ name, shortName: shortName ?? null, country: country ?? null, season: Number(season), hasGroups: hasGroups ?? true, qualifiersPerGroup: Number(qualifiersPerGroup) || 2, wildcardQualifiers: Number(wildcardQualifiers) || 0, allowCrossGroup: allowCrossGroup ?? false, teamType: teamType ?? 'club', active: true }).returning()
       return res.status(201).json({ data: tournament })
     }
 
@@ -127,6 +130,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // teams CRUD
     if (action === 'teams') {
       if (req.method === 'GET') {
+        const tidParam = req.query.tournamentId ? Number(req.query.tournamentId) : null
+        if (tidParam) {
+          const [t] = await db.select().from(tournaments).where(eq(tournaments.id, tidParam))
+          if (t && (t as any).teamType === 'national') {
+            const natTeams = await db.select().from(nationalTeams).orderBy(nationalTeams.name)
+            return ok(res, natTeams.map((n: any) => ({ ...n, shortName: n.name, logoUrl: n.flagUrl })))
+          }
+        }
         const allTeams = await db.select().from(teams).orderBy(teams.name)
         return ok(res, allTeams)
       }

@@ -59,9 +59,9 @@ async function generateKnockout(token: string, tournamentId: number, round: stri
   return data.data
 }
 
-async function fetchAllTeamsForManual(token: string) {
+async function fetchAllTeamsForManual(token: string, tournamentId?: number) {
   const { data } = await apiClient.get('/admin', {
-    params: { action: 'teams' },
+    params: { action: 'teams', ...(tournamentId ? { tournamentId } : {}) },
     headers: { 'x-admin-token': token },
   })
   return data.data ?? []
@@ -261,6 +261,7 @@ function NewMatchForm({ allTeams, token, onSaved, tournamentId, groupsData, allo
   const mutation = useMutation<any, Error, void>({
     mutationFn: () => createMatch(token, {
       tournamentId, phase: 'group',
+      groupId: selectedGroupId ? Number(selectedGroupId) : undefined,
       scheduledAt, matchday: Number(matchday),
       homeTeamId: Number(homeTeamId), awayTeamId: Number(awayTeamId),
     }),
@@ -560,6 +561,7 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
     return acc
   }, {})
 
+  console.log('allTeams count:', allTeams.length, 'sample id:', allTeams[0]?.id, 'first match homeTeamId:', allMatches[0]?.homeTeamId)
   return (
     <div className="space-y-4">
       {/* New match form - always on top */}
@@ -597,10 +599,10 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
                     homeTeam: allTeams.find((t: any) => t.id === match.homeTeamId),
                     awayTeam: allTeams.find((t: any) => t.id === match.awayTeamId),
                   }
-                  const awayTeamGroupId = groupsData.find((g: any) =>
+                  const awayTeamGroupId = match.groupId ? groupsData.find((g: any) =>
                     g.teams?.some((t: any) => t.id === match.awayTeamId)
-                  )?.id
-                  const isCrossGroup = awayTeamGroupId && awayTeamGroupId !== match.groupId
+                  )?.id : null
+                  const isCrossGroup = match.groupId && awayTeamGroupId && awayTeamGroupId !== match.groupId
                   return (
                     <div key={match.id}>
                       {editingMatch === match.id ? (
@@ -807,7 +809,7 @@ function KnockoutSection({ token, tournamentId, tournament }: { token: string; t
 
   const { data: allTeamsRaw = [] } = useQuery({
     queryKey: ['all-teams-manual', tournamentId],
-    queryFn: () => fetchAllTeamsForManual(token),
+    queryFn: () => fetchAllTeamsForManual(token, tournamentId),
     staleTime: 1000 * 60 * 10,
     enabled: !hasGroups,
   })
@@ -1000,7 +1002,7 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void; 
 
   const activeTournament = (allTournaments as any[]).find((t: any) => t.active)
   const [selectedTournamentId, setSelectedTournamentId] = useState<number | null>(null)
-  const tournamentId = selectedTournamentId ?? activeTournament?.id ?? 1
+  const tournamentId = selectedTournamentId ?? activeTournament?.id
 
   const activateMutation = useMutation<any, Error, number>({
     mutationFn: (id) => activateTournament(token, id),
