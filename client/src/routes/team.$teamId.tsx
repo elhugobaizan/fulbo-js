@@ -29,7 +29,8 @@ export const Route = createFileRoute('/team/$teamId')({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const LOCAL_LEAGUE_THRESHOLD = 100 // IDs de torneo local son bajos
+const LOCAL_LEAGUE_THRESHOLD = 100
+const POSITION_ORDER = ['Arquero', 'Defensor', 'Volante', 'Delantero']
 
 function isLocalTeam(leagueId?: number) {
   return leagueId !== undefined && leagueId <= LOCAL_LEAGUE_THRESHOLD
@@ -171,6 +172,49 @@ function MatchRow({ match }: { match: any }) {
   )
 }
 
+// ─── Grouped Squad ────────────────────────────────────────────────────────────
+
+function GroupedSquad({ players, tournamentId, setSelectedLocalPlayer }: {
+  players: any[]
+  tournamentId: number
+  setSelectedLocalPlayer: (p: any) => void
+}) {
+  const grouped = players.reduce((acc: Record<string, any[]>, p: any) => {
+    const pos = p.position ?? 'Sin posición'
+    if (!acc[pos]) acc[pos] = []
+    acc[pos].push(p)
+    return acc
+  }, {})
+  const positions = Object.keys(grouped).sort((a, b) => {
+    const ai = POSITION_ORDER.indexOf(a), bi = POSITION_ORDER.indexOf(b)
+    if (ai === -1 && bi === -1) return a.localeCompare(b)
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+  return (
+    <div className="space-y-5">
+      {positions.map((pos) => (
+        <section key={pos}>
+          <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            {pos} <span className="text-slate-600">({grouped[pos].length})</span>
+          </h3>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {grouped[pos].map((player: any) => (
+              <PlayerRow
+                key={player.id}
+                player={player}
+                tournamentId={tournamentId}
+                setSelectedLocalPlayer={setSelectedLocalPlayer}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}
+
 // ─── Team Page ────────────────────────────────────────────────────────────────
 
 function TeamPage() {
@@ -206,7 +250,7 @@ function TeamPage() {
 
   const handleToggleFavorite = () => {
     if (local && localTeam) {
-      toggle({ teamId: numericId, teamName: localTeam.name, teamLogo: localTeam.logoUrl ?? '', leagueId: leagueId ?? 0, leagueName: leagueName ?? '' })
+      toggle({ teamId: numericId, teamName: localTeam.name, teamLogo: localTeam.logoUrl ?? '', leagueId: leagueId ?? 0, leagueName: leagueName ?? '', ...(teamType ? { teamType } : {}) })
     }
   }
 
@@ -262,74 +306,7 @@ function TeamPage() {
           </div>
           {localPlayers.length === 0
             ? <NoSquad isLocal={true} />
-            : (() => {
-              const POSITION_ORDER = ['Arquero', 'Defensor', 'Volante', 'Delantero']
-              const grouped = localPlayers.reduce((acc: any, p: any) => {
-                const pos = p.position ?? 'Sin posición'
-                if (!acc[pos]) acc[pos] = []
-                acc[pos].push(p)
-                return acc
-              }, {})
-              const positions = Object.keys(grouped).sort((a, b) => {
-                const ai = POSITION_ORDER.indexOf(a), bi = POSITION_ORDER.indexOf(b)
-                if (ai === -1 && bi === -1) return a.localeCompare(b)
-                if (ai === -1) return 1
-                if (bi === -1) return -1
-                return ai - bi
-              })
-              return (
-                <div className="space-y-5">
-                  {positions.map((pos) => (
-                    <section key={pos}>
-                      <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        {pos} <span className="text-slate-600">({grouped[pos].length})</span>
-                      </h3>
-
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {grouped[pos].map((player: any) => (
-                          <PlayerRow
-                            key={player.id}
-                            player={player}
-                            tournamentId={tournamentId}
-                            setSelectedLocalPlayer={setSelectedLocalPlayer}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-                /*                 <div className="space-y-4">
-                                  {positions.map(pos => (
-                                    <div key={pos}>
-                                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                                        {pos} ({grouped[pos].length})
-                                      </h3>
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                        {grouped[pos].map((player: any) => (
-                                          <button key={player.id} onClick={() => setSelectedLocalPlayer(player)} 
-                                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 bg-gray-900/40 hover:bg-gray-900/80 transition-colors text-left">
-                                            <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0">
-                                              <span className="text-sm font-bold text-gray-300">
-                                                {player.firstName[0]}{player.lastName[0]}
-                                              </span>
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                              <p className="text-sm font-semibold text-white truncate">{player.firstName} {player.lastName}</p>
-                                              <div className="flex gap-3 mt-0.5 text-xs text-gray-500">
-                                                {player.goals > 0 && <span>{player.goals} gol{player.goals !== 1 ? 'es' : ''}</span>}
-                                                {player.assists > 0 && <span>{player.assists} asist.</span>}
-                                                {player.yellowCards > 0 && <span>{player.yellowCards} 🟨</span>}
-                                                {player.redCards > 0 && <span>{player.redCards} 🟥</span>}
-                                              </div>
-                                            </div>
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div> */
-              )
-            })()
+            : <GroupedSquad players={localPlayers} tournamentId={tournamentId} setSelectedLocalPlayer={setSelectedLocalPlayer} />
           }
           {showAddPlayer && (
             <AddPlayerModal
@@ -357,53 +334,9 @@ function TeamPage() {
               <p className="text-gray-400 text-sm">No hay partidos registrados</p>
             </div>
           ) : (
-            teamFixtures.map((match: any) => {
-              const isFinished = match.status === 'finished'
-              const homeWon = isFinished && (match.homeScore ?? 0) > (match.awayScore ?? 0)
-              const awayWon = isFinished && (match.awayScore ?? 0) > (match.homeScore ?? 0)
-              const phase = match.knockoutRound
-                ? ({ round_of_16: 'Octavos', quarterfinal: 'Cuartos', semifinal: 'Semifinal', final: 'Final' } as Record<string, string>)[match.knockoutRound] ?? match.knockoutRound
-                : match.matchday ? `Fecha ${match.matchday}` : null
-
-              return (<MatchRow key={match.id} match={match} />)
-
-              return (
-                <button key={match.id}
-                  onClick={() => isFinished && navigate({ to: '/match/$matchId', params: { matchId: String(match.id) } })}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${isFinished ? 'border-gray-800 bg-gray-900/40 hover:bg-gray-900/70 cursor-pointer' : 'border-dashed border-gray-700 bg-gray-900/20 cursor-default'}`}>
-                  {/* Left: badges + score */}
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                      <TeamBadge name={match.homeTeam?.name ?? '?'} logo={match.homeTeam?.logoUrl} size={20} />
-                      <span className="text-[9px] text-gray-500 truncate max-w-[36px]">{match.homeTeam?.shortName ?? match.homeTeam?.name?.split(' ')[0] ?? '?'}</span>
-                    </div>
-                    <span className={`text-sm font-bold w-4 text-center ${homeWon ? 'text-white' : 'text-gray-500'}`}>
-                      {isFinished ? match.homeScore : '–'}
-                    </span>
-                    <span className="text-gray-600 text-xs">-</span>
-                    <span className={`text-sm font-bold w-4 text-center ${awayWon ? 'text-white' : 'text-gray-500'}`}>
-                      {isFinished ? match.awayScore : '–'}
-                    </span>
-                    <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                      <TeamBadge name={match.awayTeam?.name ?? '?'} logo={match.awayTeam?.logoUrl} size={20} />
-                      <span className="text-[9px] text-gray-500 truncate max-w-[36px]">{match.awayTeam?.shortName ?? match.awayTeam?.name?.split(' ')[0] ?? '?'}</span>
-                    </div>
-                  </div>
-                  {/* Right: date + tournament + phase */}
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-xs text-gray-400">
-                      {match.scheduledAt
-                        ? (() => { const [y, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) })()
-                        : 'TBD'}
-                    </p>
-                    <p className="text-[10px] text-gray-600 mt-0.5">
-                      {match.tournament?.shortName ?? match.tournament?.name ?? ''}
-                      {phase ? ` · ${phase}` : ''}
-                    </p>
-                  </div>
-                </button>
-              )
-            })
+            teamFixtures.map((match: any) => (
+              <MatchRow key={match.id} match={match} />
+            ))
           )}
         </div>
       )}

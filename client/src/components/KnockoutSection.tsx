@@ -2,19 +2,11 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, X, Trophy, Calendar } from 'lucide-react'
 import { apiClient } from '../lib/api'
+import { ROUND_LABELS_LONG as ROUND_LABELS, ROUND_ORDER } from '../config/rounds'
+import { formatMatchDateShort } from '../lib/date'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ROUND_LABELS: Record<string, string> = {
-  round_of_64: '32avos de Final',
-  round_of_32: '16avos de Final',
-  round_of_16: 'Octavos de Final',
-  quarterfinal: 'Cuartos de Final',
-  semifinal: 'Semifinales',
-  final: 'Final',
-}
-
-const ROUND_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'final']
 const NEXT_ROUND: Record<string, string> = {
   round_of_64: 'round_of_32',
   round_of_32: 'round_of_16',
@@ -392,9 +384,7 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
               ) : (
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-500">
-                    {match.scheduledAt
-                      ? (() => { const [y, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' }) })()
-                      : 'Sin fecha'}
+                    {match.scheduledAt ? formatMatchDateShort(match.scheduledAt) : 'Sin fecha'}
                   </span>
                   <button onClick={() => { setEditingDate(match.id); setDateValue(match.scheduledAt?.slice(0, 16) ?? '') }}
                     className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#74ACDF] transition-colors">

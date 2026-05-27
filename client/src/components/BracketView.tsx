@@ -4,17 +4,8 @@ import { Check } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { useNavigate } from '@tanstack/react-router'
 import type { BracketSlot } from '../hooks/useBracket'
-
-const ROUND_LABELS: Record<string, string> = {
-  round_of_64: '32avos',
-  round_of_32: '16avos',
-  round_of_16: 'Octavos',
-  quarterfinal: 'Cuartos',
-  semifinal: 'Semifinal',
-  final: 'Final',
-}
-
-const ROUND_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'final']
+import { ROUND_LABELS, ROUND_ORDER, ADMIN_TOKEN_KEY } from '../config/rounds'
+import { formatMatchDateShort } from '../lib/date'
 
 const CARD_W = 160
 const CARD_H = 70
@@ -35,12 +26,7 @@ function MatchCard({ slot, onEdit, isFinal = false, knockoutStarted = true }: { 
   )
   const awayWon = isFinished && match && !homeWon
 
-  const dateStr = !isFinished && match?.scheduledAt
-    ? (() => {
-      const [, m, d] = match.scheduledAt.split('T')[0].split('-').map(Number)
-      return new Date(2000, m - 1, d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
-    })()
-    : null
+  const dateStr = !isFinished && match?.scheduledAt ? formatMatchDateShort(match.scheduledAt) : null
 
   const handleClick = () => {
     if (isFinished && match?.id) {
@@ -90,8 +76,7 @@ function MatchCard({ slot, onEdit, isFinal = false, knockoutStarted = true }: { 
 // ─── Result Modal ─────────────────────────────────────────────────────────────
 
 function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void }) {
-  const STORAGE_KEY = 'futbol-ar:admin-token'
-  const token = sessionStorage.getItem(STORAGE_KEY) ?? ''
+  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? ''
   const [homeScore, setHomeScore] = useState(String(slot.match?.homeScore ?? ''))
   const [awayScore, setAwayScore] = useState(String(slot.match?.awayScore ?? ''))
   const [homePen, setHomePen] = useState(String(slot.match?.homePenalties ?? ''))
@@ -101,14 +86,13 @@ function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void
 
   const saveMutation = useMutation<void, Error, void>({
     mutationFn: async () => {
-      const t = token || sessionStorage.getItem(STORAGE_KEY) || ''
       if (slot.match?.id) {
         await apiClient.patch('/admin?action=matches', {
           matchId: slot.match.id, homeScore: Number(homeScore), awayScore: Number(awayScore),
           homePenalties: showPenalties && homePen !== '' ? Number(homePen) : null,
           awayPenalties: showPenalties && awayPen !== '' ? Number(awayPen) : null,
           status: 'finished',
-        }, { headers: { 'x-admin-token': t } })
+        }, { headers: { 'x-admin-token': token } })
       }
     },
     onSuccess: () => {
@@ -300,7 +284,7 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
   const sfRound = sideRounds[sideRounds.length - 1]
   const sfSlots = sfRound ? (bracket[sfRound] ?? []) as BracketSlot[] : []
   const sfYs = sfSlots.map(s => yMap[`${sfRound}:${s.bracketPosition}`]).filter(y => y !== undefined)
-  const finalY = sfYs.length > 0 ? sfYs.reduce((a, b) => a + b, 0) / sfYs.length - CARD_H - 16 : totalH / 2 - CARD_H / 2
+  const finalY = sfYs.length > 0 ? sfYs.reduce((a, b) => a + b, 0) / sfYs.length - CARD_H - 36 : totalH / 2 - CARD_H / 2
 
   return (
     <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
@@ -354,8 +338,6 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
           const match = slot.match
           const isFinished = match?.status === 'finished'
 
-          // Resolve winner (mock if not finished yet for preview)
-          const MOCK_WINNER = { name: 'Argentina', logoUrl: 'https://a.espncdn.com/i/teamlogos/countries/500/arg.png' }
           let champion: { name: string; logoUrl?: string | null } | null = null
           if (isFinished) {
             const homeWon = (match?.homePenalties != null)
@@ -364,14 +346,12 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
             champion = homeWon
               ? { name: slot.homeTeam?.name ?? slot.homeLabel, logoUrl: slot.homeTeam?.logoUrl }
               : { name: slot.awayTeam?.name ?? slot.awayLabel, logoUrl: slot.awayTeam?.logoUrl }
-          } else {
-            champion = MOCK_WINNER // remove this line when going live
           }
-
+          console.log(champion)
           return (
             <div key={`F-${slot.ruleId}`}>
               {champion && (
-                <div style={{ position: 'absolute', left: finalX - 40, top: finalY - 200, width: CARD_W + 80 }}
+                <div style={{ position: 'absolute', left: finalX - 40, top: finalY + 250, width: CARD_W + 80 }}
                   className="text-center">
                   <div className="text-3xl mb-1">🏆</div>
                   <div className="text-yellow-400 text-[10px] font-bold uppercase tracking-widest mb-2">Campeón</div>

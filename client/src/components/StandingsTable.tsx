@@ -8,6 +8,7 @@ interface StandingsTableProps {
   standings: Standing[]
   leagueId: number
   leagueName: string
+  teamType?: string
 }
 
 function getDescriptionStyle(description: string | null): string {
@@ -20,7 +21,7 @@ function getDescriptionStyle(description: string | null): string {
   return ''
 }
 
-export function StandingsTable({ standings, leagueId, leagueName }: StandingsTableProps) {
+export function StandingsTable({ standings, leagueId, leagueName, teamType }: StandingsTableProps) {
   const { toggle, isFavorite } = useFavorites()
   const navigate = useNavigate()
 
@@ -93,6 +94,7 @@ export function StandingsTable({ standings, leagueId, leagueName }: StandingsTab
                       teamLogo: standing.team.logo,
                       leagueId,
                       leagueName,
+                      ...(teamType ? { teamType } : {}),
                     })}
                     className="p-1 rounded-md transition-colors hover:bg-gray-700 disabled:opacity-30"
                     title={fav ? 'Quitar de favoritos' : 'Agregar a favoritos'}

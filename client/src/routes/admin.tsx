@@ -1,28 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Lock, Plus, Check, X, Trophy, Trash2 } from 'lucide-react'
 import { MatchEventsPanel } from '../components/MatchEventsPanel'
 import { KnockoutSection } from '../components/KnockoutSection'
-
-const ROUND_ORDER = ['round_of_64', 'round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'final']
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
+import { ROUND_ORDER, KNOCKOUT_ROUNDS, ADMIN_TOKEN_KEY } from '../config/rounds'
 
 export const Route = createFileRoute('/admin')({
   component: AdminPage,
 })
 
-const STORAGE_KEY = 'futbol-ar:admin-token'
-
-const KNOCKOUT_ROUNDS = [
-  { value: 'round_of_64', label: '32avos' },
-  { value: 'round_of_32', label: '16avos' },
-  { value: 'round_of_16', label: 'Octavos' },
-  { value: 'quarterfinal', label: 'Cuartos' },
-  { value: 'semifinal', label: 'Semifinal' },
-  { value: 'final', label: 'Final' },
-]
 
 // ─── API calls ───────────────────────────────────────────────────────────────
 
@@ -108,7 +97,7 @@ function LoginForm({ onLogin }: { onLogin: (token: string) => void }) {
     try {
       const ok = await authenticate(password)
       if (ok) {
-        sessionStorage.setItem(STORAGE_KEY, password)
+        sessionStorage.setItem(ADMIN_TOKEN_KEY, password)
         onLogin(password)
       } else {
         setError('Password incorrecto')
@@ -186,9 +175,9 @@ function MatchResultForm({ match, tournamentId, token, onSaved, onClose }: { mat
             className="w-14 text-center py-1.5 rounded-lg bg-gray-700 border border-gray-600 text-white font-bold text-lg focus:outline-none focus:border-[#74ACDF]" />
         </div>
         <span className="text-sm font-medium text-white flex-1 truncate">{match.awayTeam?.shortName ?? match.awayTeam?.name}</span>
-        {onClose && (<button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
+        <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
           <X size={14} />
-        </button>)}
+        </button>
       </div>
       {showPenalties && (
         <div className="flex items-center gap-3">
@@ -388,19 +377,16 @@ function NewBracketRuleForm({ groups, allRules, token, tournamentId, hasGroups =
     },
   })
 
-  // For no-groups first round: no prev rules exist, so source fields are optional
+  function isSlotValid(source: 'group' | 'winner' | 'wildcard', groupId: string, position: string, winnerId: string, wildcardGroupIds: string[]): boolean {
+    if (source === 'group') return !!(groupId && position)
+    if (source === 'wildcard') return !!(position && wildcardGroupIds.length > 0)
+    return !!winnerId
+  }
+
   const isFirstRoundNoGroups = !hasGroups && prevRoundRules.length === 0
-  const isValid = bracketPosition && (
-    isFirstRoundNoGroups ? true :
-      (homeSource === 'group' ? (homeGroupId && homePosition) :
-        homeSource === 'wildcard' ? (homePosition && homeWildcardGroupIds.length > 0) :
-          homeWinnerOf)
-  ) && (
-      isFirstRoundNoGroups ? true :
-        (awaySource === 'group' ? (awayGroupId && awayPosition) :
-          awaySource === 'wildcard' ? (awayPosition && awayWildcardGroupIds.length > 0) :
-            awayWinnerOf)
-    )
+  const isValid = !!bracketPosition
+    && (isFirstRoundNoGroups || isSlotValid(homeSource, homeGroupId, homePosition, homeWinnerOf, homeWildcardGroupIds))
+    && (isFirstRoundNoGroups || isSlotValid(awaySource, awayGroupId, awayPosition, awayWinnerOf, awayWildcardGroupIds))
 
   const SlotConfig = ({
     label, source, setSource, groupId, setGroupId, position, setPosition, winnerId, setWinnerId, wildcardGroupIds, setWildcardGroupIds
@@ -575,8 +561,10 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
   allMatches: any[]; allTeams: any[]; groupsData: any[]; token: string
   editingMatch: number | null; setEditingMatch: (id: number | null) => void; tournamentId: number; allowCrossGroup: boolean
 }) {
-  // All available matchdays across all groups
-  const allMatchdays = [...new Set(allMatches.filter(m => m.matchday).map(m => m.matchday as number))].sort((a, b) => a - b)
+  const allMatchdays = useMemo(
+    () => [...new Set(allMatches.filter(m => m.matchday).map(m => m.matchday as number))].sort((a, b) => a - b),
+    [allMatches]
+  )
   const [selectedMatchday, setSelectedMatchday] = useState<number | null>(allMatchdays[allMatchdays.length - 1] ?? null)
 
   const dayMatches = allMatches
@@ -591,7 +579,6 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
     return acc
   }, {})
 
-  console.log('allTeams count:', allTeams.length, 'sample id:', allTeams[0]?.id, 'first match homeTeamId:', allMatches[0]?.homeTeamId)
   return (
     <div className="space-y-4">
       {/* New match form - always on top */}
@@ -736,7 +723,7 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void; 
   })
 
   const { tournament, groups: groupsData, matches: allMatches } = data ?? {}
-  const allTeams = groupsData?.flatMap((g: any) => g.teams) ?? []
+  const allTeams = useMemo(() => groupsData?.flatMap((g: any) => g.teams) ?? [], [groupsData])
 
   useEffect(() => {
     if (tournament && !tournament.hasGroups) setActiveTab('bracket')
@@ -830,8 +817,8 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void; 
 }
 
 function AdminPage() {
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(STORAGE_KEY))
-  const handleLogout = () => { sessionStorage.removeItem(STORAGE_KEY); setToken(null) }
+  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(ADMIN_TOKEN_KEY))
+  const handleLogout = () => { sessionStorage.removeItem(ADMIN_TOKEN_KEY); setToken(null) }
   if (!token) return <LoginForm onLogin={setToken} />
   return <AdminPanel token={token} onLogout={handleLogout} />
 }

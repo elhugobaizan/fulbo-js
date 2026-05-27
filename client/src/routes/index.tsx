@@ -8,6 +8,7 @@ import { useFavorites } from '../hooks/useFavorites'
 import { useTeamFixtures } from '../hooks/useTeamFixtures'
 import { TeamBadge } from '../components/TeamBadge'
 import { CURRENT_SEASON } from '../config/leagues'
+import { formatMatchDateShort, formatTimeAgo } from '../lib/date'
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -20,18 +21,6 @@ function getGreeting(): string {
   return 'Buenas noches'
 }
 
-function formatTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(minutes / 60)
-  if (minutes < 60) return `hace ${minutes}m`
-  if (hours < 24) return `hace ${hours}h`
-  return new Date(dateStr).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })
-}
 
 // ─── Live Banner ─────────────────────────────────────────────────────────────
 
@@ -70,7 +59,7 @@ function LiveBanner() {
 // ─── Team fixtures card ───────────────────────────────────────────────────────
 
 function TeamFixturesCard({ fav }: { fav: any }) {
-  const { data: fixtures = [], isLoading } = useTeamFixtures(fav.teamId, 3)
+  const { data: fixtures = [], isLoading } = useTeamFixtures(fav.teamId, 3, false, fav.teamType)
   const navigate = useNavigate()
 
   return (
@@ -79,7 +68,7 @@ function TeamFixturesCard({ fav }: { fav: any }) {
       <Link
         to="/team/$teamId"
         params={{ teamId: String(fav.teamId) }}
-        search={{ leagueId: fav.leagueId, leagueName: fav.leagueName }}
+        search={{ leagueId: fav.leagueId, leagueName: fav.leagueName, ...(fav.teamType ? { teamType: fav.teamType } : {}) }}
         className="flex items-center gap-3 px-4 py-3 hover:bg-gray-800/50 transition-colors border-b border-gray-800"
       >
         <TeamBadge name={fav.teamName} logo={fav.teamLogo} size={28} />
@@ -115,7 +104,7 @@ function TeamFixturesCard({ fav }: { fav: any }) {
                 </div>
                 <div className="text-right flex-shrink-0">
                   {match.scheduledAt
-                    ? <span className="text-xs text-gray-500 capitalize">{formatDate(match.scheduledAt)}</span>
+                    ? <span className="text-xs text-gray-500 capitalize">{formatMatchDateShort(match.scheduledAt)}</span>
                     : <span className="text-xs text-gray-600">Fecha {match.matchday}</span>
                   }
                 </div>

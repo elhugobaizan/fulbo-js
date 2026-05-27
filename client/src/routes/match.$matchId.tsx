@@ -1,13 +1,15 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Pencil, X, Users, Download } from 'lucide-react'
+import { ArrowLeft, Pencil, Users, Download } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { TeamBadge } from '../components/TeamBadge'
 import { MatchEventsPanel } from '../components/MatchEventsPanel'
 import { LineupPanel } from '../components/LineupPanel'
 import { ESPNImportModal } from '../components/ESPNImportModal'
+import { Modal } from '../components/Modal'
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
+import { formatMatchDate } from '../lib/date'
 
 export const Route = createFileRoute('/match/$matchId')({
   component: MatchPage,
@@ -29,12 +31,6 @@ async function fetchMatchDetail(matchId: number) {
   return data.data
 }
 
-function formatDate(dateStr: string): string {
-  const [y, m, d] = dateStr.split('T')[0].split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString('es-AR', {
-    weekday: 'long', day: 'numeric', month: 'long',
-  })
-}
 
 function MatchPage() {
   const { matchId } = Route.useParams()
@@ -53,6 +49,13 @@ function MatchPage() {
   const { data: homePlayers = [] } = usePlayersByTeam(homeTeamId)
   const { data: awayPlayers = [] } = usePlayersByTeam(awayTeamId)
 
+  const isFinished = match?.status === 'finished'
+  const homeEvents = useMemo(() => (match?.events ?? []).filter((e: any) => e.teamId === match?.homeTeamId), [match])
+  const awayEvents = useMemo(() => (match?.events ?? []).filter((e: any) => e.teamId === match?.awayTeamId), [match])
+  const allEvents = useMemo(() => [...(match?.events ?? [])].sort((a: any, b: any) => (a.minute ?? 999) - (b.minute ?? 999)), [match])
+  const homeGoals = useMemo(() => homeEvents.filter((e: any) => e.type === 'goal'), [homeEvents])
+  const awayGoals = useMemo(() => awayEvents.filter((e: any) => e.type === 'goal'), [awayEvents])
+
   if (isLoading) return (
     <div className="space-y-4 animate-pulse">
       <div className="h-8 w-32 bg-gray-800 rounded" />
@@ -66,11 +69,6 @@ function MatchPage() {
     </div>
   )
 
-  const isFinished = match.status === 'finished'
-  const homeEvents = (match.events ?? []).filter((e: any) => e.teamId === match.homeTeamId)
-  const awayEvents = (match.events ?? []).filter((e: any) => e.teamId === match.awayTeamId)
-  const allEvents = [...(match.events ?? [])].sort((a: any, b: any) => (a.minute ?? 999) - (b.minute ?? 999))
-
   return (
     <div className="space-y-5">
       <button onClick={() => navigate({ to: '/fixtures' })}
@@ -82,7 +80,7 @@ function MatchPage() {
       <div className="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
         {match.scheduledAt && (
           <p className="text-xs text-gray-500 text-center mb-4 capitalize">
-            {formatDate(match.scheduledAt)}
+            {formatMatchDate(match.scheduledAt)}
             {match.matchday && <span className="ml-2 text-gray-600">· Fecha {match.matchday}</span>}
           </p>
         )}
@@ -95,10 +93,10 @@ function MatchPage() {
               <p className="text-sm font-semibold text-white text-center">{match.homeTeam?.shortName ?? match.homeTeam?.name ?? '?'}</p>
             </Link>
             <div className="flex flex-wrap justify-center gap-1 min-h-4">
-              {homeEvents.filter((e: any) => e.type === 'goal').map((e: any, i: number) => (
+              {homeGoals.map((e: any, i: number) => (
                 <span key={i} className="text-xs text-gray-400">
                   {e.player ? `${e.player.lastName}${e.isPenalty ? ' (p)' : ''}${e.isOwnGoal ? ' (e/c)' : ''}${e.minute ? ` ${e.minute}'` : ''}` : `⚽${e.minute ? ` ${e.minute}'` : ''}`}
-                  {i < homeEvents.filter((e: any) => e.type === 'goal').length - 1 && ', '}
+                  {i < homeGoals.length - 1 && ', '}
                 </span>
               ))}
             </div>
@@ -133,10 +131,10 @@ function MatchPage() {
               <p className="text-sm font-semibold text-white text-center">{match.awayTeam?.shortName ?? match.awayTeam?.name ?? '?'}</p>
             </Link>
             <div className="flex flex-wrap justify-center gap-1 min-h-4">
-              {awayEvents.filter((e: any) => e.type === 'goal').map((e: any, i: number) => (
+              {awayGoals.map((e: any, i: number) => (
                 <span key={i} className="text-xs text-gray-400">
                   {e.player ? `${e.player.lastName}${e.minute ? ` ${e.minute}'` : ''}` : `⚽${e.minute ? ` ${e.minute}'` : ''}`}
-                  {i < awayEvents.filter((e: any) => e.type === 'goal').length - 1 && ', '}
+                  {i < awayGoals.length - 1 && ', '}
                 </span>
               ))}
             </div>
@@ -183,14 +181,6 @@ function MatchPage() {
         <p className="text-gray-600 text-sm text-center py-4">Sin incidencias cargadas</p>
       )}
 
-      {location.hostname === 'localhost' && match && (
-        <div className="fixed bottom-20 right-3 z-40 bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 font-mono text-[15px] text-fuchsia-700 shadow-xl space-y-0.5 select-all">
-          <p><span className="text-emerald-600">match:</span> {match.id}</p>
-          <p><span className="text-emerald-600">home:</span> {match.homeTeamId}</p>
-          <p><span className="text-emerald-600">away:</span> {match.awayTeamId}</p>
-        </div>
-      )}
-
       {isFinished && (
         <div className="flex gap-2">
           <button onClick={() => setShowPanel(true)}
@@ -221,57 +211,27 @@ function MatchPage() {
       )}
 
       {showLineup && (
-        <>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowLineup(false)} />
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pointer-events-none">
-            <div className="bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-sm pointer-events-auto"
-              style={{ maxHeight: '80vh' }}
-              onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-800">
-                <span className="font-semibold text-white text-sm">Alineación</span>
-                <button onClick={() => setShowLineup(false)} className="text-gray-500 hover:text-white transition-colors">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="px-5 py-4 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 60px)' }}>
-                <LineupPanel
-                  matchId={match.id}
-                  homeTeam={match.homeTeam}
-                  awayTeam={match.awayTeam}
-                  homePlayers={homePlayers}
-                  awayPlayers={awayPlayers}
-                />
-              </div>
-            </div>
-          </div>
-        </>
+        <Modal title="Alineación" onClose={() => setShowLineup(false)}>
+          <LineupPanel
+            matchId={match.id}
+            homeTeam={match.homeTeam}
+            awayTeam={match.awayTeam}
+            homePlayers={homePlayers}
+            awayPlayers={awayPlayers}
+          />
+        </Modal>
       )}
 
       {showPanel && isFinished && (
-        <>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowPanel(false)} />
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pointer-events-none">
-            <div className="bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-sm pointer-events-auto"
-              style={{ maxHeight: '80vh' }}
-              onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-800">
-                <span className="font-semibold text-white text-sm">Incidencias</span>
-                <button onClick={() => setShowPanel(false)} className="text-gray-500 hover:text-white transition-colors">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="px-5 py-4 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 60px)' }}>
-                <MatchEventsPanel
-                  matchId={match.id}
-                  homeTeam={match.homeTeam}
-                  awayTeam={match.awayTeam}
-                  homePlayers={homePlayers}
-                  awayPlayers={awayPlayers}
-                />
-              </div>
-            </div>
-          </div>
-        </>
+        <Modal title="Incidencias" onClose={() => setShowPanel(false)}>
+          <MatchEventsPanel
+            matchId={match.id}
+            homeTeam={match.homeTeam}
+            awayTeam={match.awayTeam}
+            homePlayers={homePlayers}
+            awayPlayers={awayPlayers}
+          />
+        </Modal>
       )}
     </div>
   )

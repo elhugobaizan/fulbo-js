@@ -17,7 +17,7 @@ export interface LocalGroupStandings {
 }
 
 export interface LocalStandingsData {
-  tournament: { id: number; name: string; season: number; qualifiersPerGroup: number; wildcardQualifiers: number }
+  tournament: { id: number; name: string; season: number; qualifiersPerGroup: number; wildcardQualifiers: number; teamType?: string }
   groups: LocalGroupStandings[]
 }
 

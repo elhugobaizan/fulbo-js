@@ -7,6 +7,7 @@ export interface FavoriteTeam {
   teamLogo: string
   leagueId: number
   leagueName: string
+  teamType?: string
   addedAt: string
 }
 

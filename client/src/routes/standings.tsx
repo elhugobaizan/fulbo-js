@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useActiveTournament } from '../hooks/useActiveTournament'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { RefreshCw, Star } from 'lucide-react'
@@ -14,10 +15,9 @@ function StandingsPage() {
   const tournamentId = activeTournament?.id ?? 1
   const localQuery = useLocalStandings(tournamentId)
   const qualifiersPerGroup = localQuery.data?.tournament?.qualifiersPerGroup ?? activeTournament?.qualifiersPerGroup ?? 8
-  const wildcardQualifiers = (localQuery.data?.tournament as any)?.wildcardQualifiers ?? 0
-  const tournamentTeamType = (localQuery.data?.tournament as any)?.teamType ?? 'club'
+  const wildcardQualifiers = localQuery.data?.tournament?.wildcardQualifiers ?? 0
+  const tournamentTeamType = localQuery.data?.tournament?.teamType ?? 'club'
   const tournamentName = localQuery.data?.tournament?.name ?? activeTournament?.name ?? ''
-  console.log('tournamentTeamType:', tournamentTeamType, 'raw:', localQuery.data?.tournament)
 
   return (
     <div className="space-y-4">
@@ -99,19 +99,20 @@ function LocalStandingsTable({ standings, qualifiersPerGroup, wildcardQualifiers
   allGroupsStandings?: any[][]
   teamType?: string
 }) {
-  // Compute wildcard threshold: rank of best N thirds across all groups
-  const wildcardPos = qualifiersPerGroup + 1
-  const allThirds = allGroupsStandings
-    .map(g => g.find((r: any) => Number(r.rank) === wildcardPos))
-    .filter(Boolean)
-    .sort((a: any, b: any) => {
-      if (b.points !== a.points) return b.points - a.points
-      const da = a.goalsDiff ?? (a.all.goals.for - a.all.goals.against)
-      const db2 = b.goalsDiff ?? (b.all.goals.for - b.all.goals.against)
-      if (db2 !== da) return db2 - da
-      return b.all.goals.for - a.all.goals.for
-    })
-  const wildcardTeamIds = new Set(allThirds.slice(0, wildcardQualifiers).map((r: any) => r.team.id))
+  const wildcardTeamIds = useMemo(() => {
+    const wildcardPos = qualifiersPerGroup + 1
+    const allThirds = allGroupsStandings
+      .map(g => g.find((r: any) => Number(r.rank) === wildcardPos))
+      .filter(Boolean)
+      .sort((a: any, b: any) => {
+        if (b.points !== a.points) return b.points - a.points
+        const da = a.goalsDiff ?? (a.all.goals.for - a.all.goals.against)
+        const db = b.goalsDiff ?? (b.all.goals.for - b.all.goals.against)
+        if (db !== da) return db - da
+        return b.all.goals.for - a.all.goals.for
+      })
+    return new Set(allThirds.slice(0, wildcardQualifiers).map((r: any) => r.team.id))
+  }, [allGroupsStandings, qualifiersPerGroup, wildcardQualifiers])
   const navigate = useNavigate()
   const { toggle, isFavorite } = useFavorites()
 
@@ -175,7 +176,7 @@ function LocalStandingsTable({ standings, qualifiersPerGroup, wildcardQualifiers
                 </td>
                 <td className="pr-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                   <button
-                    onClick={() => toggle({ teamId: s.team.id, teamName: s.team.name, teamLogo: s.team.logo ?? '', leagueId: tournamentId, leagueName: tournamentName })}
+                    onClick={() => toggle({ teamId: s.team.id, teamName: s.team.name, teamLogo: s.team.logo ?? '', leagueId: tournamentId, leagueName: tournamentName, ...(teamType !== 'club' ? { teamType } : {}) })}
                     className="rounded-lg p-1.5 text-slate-600 transition-colors hover:bg-white/[0.04] hover:text-yellow-300"
                   >
                     <Star
