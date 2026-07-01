@@ -186,14 +186,34 @@ export type NewBracketRule = typeof bracketRules.$inferInsert
 export type NationalTeam = typeof nationalTeams.$inferSelect
 export type NewNationalTeam = typeof nationalTeams.$inferInsert
 
-export const localPlayers = pgTable('local_players', {
+// ─── Players (identidad) ──────────────────────────────────────────────────────
+// La persona real. Independiente de club/seleccion/torneo — permite que
+// "Messi en el PSG" y "Messi en la seleccion Argentina" sean el mismo jugador.
+
+export const players = pgTable('players', {
   id: serial('id').primaryKey(),
   firstName: varchar('first_name', { length: 100 }).notNull(),
   lastName: varchar('last_name', { length: 100 }).notNull(),
-  teamId: integer('team_id').references(() => teams.id).notNull(),
+  externalId: integer('external_id'),
+  createdAt: timestamp('created_at').defaultNow(),
+})
+
+export type Player = typeof players.$inferSelect
+export type NewPlayer = typeof players.$inferInsert
+
+// local_players es el vinculo: que persona (players.id, via personId) jugo
+// para que equipo/seleccion, en que torneo. Un mismo jugador puede tener
+// varias filas (una por club, una por seleccion, una por torneo si se
+// quiere separar). OJO: "playerId" en el resto de la app (match_events,
+// match_lineups) siempre significa local_players.id, NO players.id — por
+// eso esta columna se llama personId y no playerId, para no pisarse.
+export const localPlayers = pgTable('local_players', {
+  id: serial('id').primaryKey(),
+  personId: integer('person_id').references(() => players.id).notNull(),
+  teamId: integer('team_id').references(() => teams.id),
+  nationalTeamId: integer('national_team_id').references(() => nationalTeams.id),
   tournamentId: integer('tournament_id').references(() => tournaments.id).notNull(),
   position: varchar('position', { length: 20 }),
-  externalId: integer('external_id'),
   createdAt: timestamp('created_at').defaultNow(),
 })
 

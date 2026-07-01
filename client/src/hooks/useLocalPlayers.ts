@@ -35,8 +35,8 @@ async function fetchLocalPlayers(tournamentId: number): Promise<LocalPlayer[]> {
   return data.data ?? []
 }
 
-async function fetchPlayersByTeam(teamId: number): Promise<LocalPlayer[]> {
-  const { data } = await apiClient.get('/local', { params: { resource: 'players-by-team', teamId, tournamentId: 1 } })
+async function fetchPlayersByTeam(teamId: number, teamType?: string): Promise<LocalPlayer[]> {
+  const { data } = await apiClient.get('/local', { params: { resource: 'players-by-team', teamId, tournamentId: 1, ...(teamType ? { teamType } : {}) } })
   return data.data ?? []
 }
 
@@ -66,8 +66,38 @@ export function useLocalTopCards(tournamentId: number) {
 export function useLocalPlayers(tournamentId: number) {
   return useQuery({ queryKey: ['local-players', tournamentId], queryFn: () => fetchLocalPlayers(tournamentId), staleTime: 1000 * 60 * 5 })
 }
-export function usePlayersByTeam(teamId: number) {
-  return useQuery({ queryKey: ['players-by-team', teamId], queryFn: () => fetchPlayersByTeam(teamId), enabled: teamId > 0, staleTime: 1000 * 60 * 5 })
+export function usePlayersByTeam(teamId: number, teamType?: string) {
+  return useQuery({ queryKey: ['players-by-team', teamId, teamType], queryFn: () => fetchPlayersByTeam(teamId, teamType), enabled: teamId > 0, staleTime: 1000 * 60 * 5 })
+}
+
+export interface PlayerMembership {
+  teamName: string | null
+  tournamentName: string
+  position: string | null
+}
+
+export interface PlayerSearchResult {
+  id: number
+  firstName: string
+  lastName: string
+  memberships: PlayerMembership[]
+}
+
+async function searchPlayers(token: string, q: string): Promise<PlayerSearchResult[]> {
+  const { data } = await apiClient.get('/admin', {
+    params: { action: 'search-players', q },
+    headers: { 'x-admin-token': token },
+  })
+  return data.data ?? []
+}
+
+export function useSearchPlayers(token: string, q: string) {
+  return useQuery({
+    queryKey: ['search-players', q],
+    queryFn: () => searchPlayers(token, q),
+    enabled: !!token && q.trim().length >= 2,
+    staleTime: 1000 * 30,
+  })
 }
 
 async function fetchTeamTournaments(teamId: number, teamType?: string) {
@@ -108,7 +138,7 @@ export function useCreatePlayer() {
     mutationFn: ({ token, payload }: { token: string; payload: any }) => createPlayer(token, payload),
     onSuccess: (_, { payload }) => {
       queryClient.invalidateQueries({ queryKey: ['local-players', payload.tournamentId] })
-      queryClient.invalidateQueries({ queryKey: ['players-by-team', payload.teamId, payload.tournamentId] })
+      queryClient.invalidateQueries({ queryKey: ['players-by-team', payload.teamId ?? payload.nationalTeamId] })
     },
   })
 }
@@ -119,7 +149,7 @@ export function useEditPlayer() {
     mutationFn: ({ token, playerId, payload }: { token: string; playerId: number; payload: any }) => editPlayer(token, playerId, payload),
     onSuccess: (_, { payload }) => {
       queryClient.invalidateQueries({ queryKey: ['local-players', payload.tournamentId] })
-      queryClient.invalidateQueries({ queryKey: ['players-by-team', payload.teamId, payload.tournamentId] })
+      queryClient.invalidateQueries({ queryKey: ['players-by-team', payload.teamId ?? payload.nationalTeamId] })
     },
   })
 }

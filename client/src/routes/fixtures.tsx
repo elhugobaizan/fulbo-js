@@ -42,7 +42,7 @@ function groupMatchesByDate(matches: any[]) {
 
 // ─── Result Modal ─────────────────────────────────────────────────────────────
 
-function ResultModal({ match, onClose }: { match: any; onClose: () => void }) {
+function ResultModal({ match, isNational = false, onClose }: { match: any; isNational?: boolean; onClose: () => void }) {
   const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? ''
   const [authenticated, setAuthenticated] = useState(!!token)
   const [password, setPassword] = useState('')
@@ -53,8 +53,9 @@ function ResultModal({ match, onClose }: { match: any; onClose: () => void }) {
   const [awayPen, setAwayPen] = useState(String(match.awayPenalties ?? ''))
   const queryClient = useQueryClient()
 
-  const { data: homePlayers = [] } = usePlayersByTeam(match.homeTeam?.id ?? 0)
-  const { data: awayPlayers = [] } = usePlayersByTeam(match.awayTeam?.id ?? 0)
+  const teamType = isNational ? 'national' : undefined
+  const { data: homePlayers = [] } = usePlayersByTeam(match.homeTeam?.id ?? 0, teamType)
+  const { data: awayPlayers = [] } = usePlayersByTeam(match.awayTeam?.id ?? 0, teamType)
   const showPenalties = homeScore !== '' && awayScore !== '' && Number(homeScore) === Number(awayScore)
 
   const authMutation = useMutation<any, Error, void>({
@@ -148,7 +149,7 @@ function ResultModal({ match, onClose }: { match: any; onClose: () => void }) {
 }
 
 // ─── Local fixture card ───────────────────────────────────────────────────────
-function LocalFixtureCard({ match }: { match: any }) {
+function LocalFixtureCard({ match, isNational = false }: { match: any; isNational?: boolean }) {
   const [editing, setEditing] = useState(false)
   const navigate = useNavigate()
 
@@ -264,7 +265,7 @@ function LocalFixtureCard({ match }: { match: any }) {
         )}
       </div>
 
-      {editing && <ResultModal match={match} onClose={() => setEditing(false)} />}
+      {editing && <ResultModal match={match} isNational={isNational} onClose={() => setEditing(false)} />}
     </>
   )
 }
@@ -428,7 +429,7 @@ function FixturesPage() {
 
                   <div className="space-y-2">
                     {dateMatches.map((match) => (
-                      <LocalFixtureCard key={match.id} match={match} />
+                      <LocalFixtureCard key={match.id} match={match} isNational={activeTournament?.teamType === 'national'} />
                     ))}
                   </div>
                 </section>
@@ -450,7 +451,7 @@ function FixturesPage() {
                 <div key={round} className="space-y-2">
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{ROUND_LABELS[round] ?? round}</h3>
                   {(matches as any[]).map((match: any) => (
-                    <LocalFixtureCard key={match.id} match={match} />
+                    <LocalFixtureCard key={match.id} match={match} isNational={activeTournament?.teamType === 'national'} />
                   ))}
                 </div>
               ))}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { X, UserPlus, Lock } from 'lucide-react'
-import { useCreatePlayer } from '../hooks/useLocalPlayers'
+import { X, UserPlus, Lock, Search, Check } from 'lucide-react'
+import { useCreatePlayer, useSearchPlayers } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
 
 const STORAGE_KEY = 'futbol-ar:admin-token'
@@ -11,6 +11,7 @@ interface AddPlayerModalProps {
   tournamentId: number
   teams: Team[]
   defaultTeamId?: number
+  isNational?: boolean
   onClose: () => void
 }
 
@@ -19,7 +20,7 @@ async function authenticate(password: string): Promise<string | null> {
   return data.data?.token ?? null
 }
 
-export function AddPlayerModal({ tournamentId, teams, defaultTeamId, onClose }: AddPlayerModalProps) {
+export function AddPlayerModal({ tournamentId, teams, defaultTeamId, isNational = false, onClose }: AddPlayerModalProps) {
   const [token, setToken] = useState(() => sessionStorage.getItem(STORAGE_KEY) ?? '')
   const [authenticated, setAuthenticated] = useState(!!sessionStorage.getItem(STORAGE_KEY))
   const [password, setPassword] = useState('')
@@ -31,8 +32,12 @@ export function AddPlayerModal({ tournamentId, teams, defaultTeamId, onClose }: 
   const [teamId, setTeamId] = useState(String(defaultTeamId ?? teams[0]?.id ?? ''))
   const [position, setPosition] = useState('Defensor')
   const [success, setSuccess] = useState(false)
+  const [existingPlayerId, setExistingPlayerId] = useState<number | null>(null)
 
   const { mutate: createPlayer, isPending } = useCreatePlayer()
+
+  const searchQuery = `${firstName} ${lastName}`.trim()
+  const { data: searchResults = [] } = useSearchPlayers(token, existingPlayerId ? '' : searchQuery)
 
   const handleAuth = async () => {
     setAuthLoading(true)
@@ -47,15 +52,28 @@ export function AddPlayerModal({ tournamentId, teams, defaultTeamId, onClose }: 
     finally { setAuthLoading(false) }
   }
 
+  const handleUseExisting = (player: { id: number; firstName: string; lastName: string }) => {
+    setExistingPlayerId(player.id)
+    setFirstName(player.firstName)
+    setLastName(player.lastName)
+  }
+
+  const clearExisting = () => setExistingPlayerId(null)
+
   const handleSave = () => {
     if (!firstName || !lastName || !teamId) return
     createPlayer({
       token,
-      payload: { firstName, lastName, teamId: Number(teamId), tournamentId, position },
+      payload: {
+        ...(existingPlayerId ? { existingPlayerId } : { firstName, lastName }),
+        ...(isNational ? { nationalTeamId: Number(teamId) } : { teamId: Number(teamId) }),
+        tournamentId, position,
+      },
     }, {
       onSuccess: () => {
         setFirstName('')
         setLastName('')
+        setExistingPlayerId(null)
         setSuccess(true)
         setTimeout(() => setSuccess(false), 2000)
       },
@@ -93,20 +111,48 @@ export function AddPlayerModal({ tournamentId, teams, defaultTeamId, onClose }: 
           </div>
         ) : (
           <div className="space-y-3">
+            {existingPlayerId && (
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-emerald-950/40 border border-emerald-800/50">
+                <span className="text-xs text-emerald-400">Vinculando a jugador existente</span>
+                <button onClick={clearExisting} className="text-xs text-gray-400 hover:text-white">Cambiar</button>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-gray-400 mb-1 block">Nombre *</label>
-                <input value={firstName} onChange={e => setFirstName(e.target.value)}
+                <input value={firstName} onChange={e => { setFirstName(e.target.value); setExistingPlayerId(null) }}
                   onKeyDown={e => e.key === 'Enter' && handleSave()} placeholder="Juan"
-                  className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" autoFocus />
+                  disabled={!!existingPlayerId}
+                  className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF] disabled:opacity-60" autoFocus />
               </div>
               <div>
                 <label className="text-xs text-gray-400 mb-1 block">Apellido *</label>
-                <input value={lastName} onChange={e => setLastName(e.target.value)}
+                <input value={lastName} onChange={e => { setLastName(e.target.value); setExistingPlayerId(null) }}
                   onKeyDown={e => e.key === 'Enter' && handleSave()} placeholder="Pérez"
-                  className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
+                  disabled={!!existingPlayerId}
+                  className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF] disabled:opacity-60" />
               </div>
             </div>
+
+            {!existingPlayerId && searchResults.length > 0 && (
+              <div className="space-y-1.5 rounded-lg border border-gray-800 bg-gray-950/60 p-2">
+                <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                  <Search size={11} /><span>¿Es alguno de estos el mismo jugador?</span>
+                </div>
+                {searchResults.map((p) => (
+                  <button key={p.id} onClick={() => handleUseExisting(p)}
+                    className="w-full text-left px-2 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 transition-colors">
+                    <p className="text-xs font-medium text-white">{p.firstName} {p.lastName}</p>
+                    {p.memberships.length > 0 && (
+                      <p className="text-[10px] text-gray-500 truncate">
+                        {p.memberships.map((m) => `${m.teamName ?? '?'} (${m.tournamentName})`).join(' · ')}
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-gray-400 mb-1 block">Posición *</label>
@@ -116,7 +162,7 @@ export function AddPlayerModal({ tournamentId, teams, defaultTeamId, onClose }: 
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-400 mb-1 block">Equipo *</label>
+                <label className="text-xs text-gray-400 mb-1 block">{isNational ? 'Selección *' : 'Equipo *'}</label>
                 <select value={teamId} onChange={e => setTeamId(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]">
                   {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -126,7 +172,8 @@ export function AddPlayerModal({ tournamentId, teams, defaultTeamId, onClose }: 
             {success && <p className="text-emerald-400 text-xs text-center">Jugador agregado</p>}
             <button onClick={handleSave} disabled={!firstName || !lastName || !teamId || isPending}
               className="w-full py-2 rounded-lg bg-[#74ACDF] text-gray-950 font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2">
-              <UserPlus size={14} /> {isPending ? 'Guardando...' : 'Agregar jugador'}
+              {existingPlayerId ? <Check size={14} /> : <UserPlus size={14} />}
+              {isPending ? 'Guardando...' : existingPlayerId ? 'Vincular jugador' : 'Agregar jugador'}
             </button>
           </div>
         )}

@@ -155,12 +155,13 @@ interface ESPNImportModalProps {
   homePlayers: any[]
   awayPlayers: any[]
   tournamentId: number
+  isNational?: boolean
   onClose: () => void
 }
 
 type ImportStep = 'auth' | 'input' | 'mapping' | 'reconcile' | 'preview' | 'done'
 
-export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, awayPlayers, tournamentId, onClose }: ESPNImportModalProps) {
+export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, awayPlayers, tournamentId, isNational = false, onClose }: ESPNImportModalProps) {
   const [step, setStep] = useState<ImportStep>(() => sessionStorage.getItem(STORAGE_KEY) ? 'input' : 'auth')
   const [token, setToken] = useState(() => sessionStorage.getItem(STORAGE_KEY) ?? '')
   const [password, setPassword] = useState('')
@@ -256,13 +257,14 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
         const firstName = parts[0]
         const lastName = parts.slice(1).join(' ') || parts[0]
         const lineupEntry = [...parsedLineups.home, ...parsedLineups.away].find(p => p.name === name)
+        const teamField = isNational ? { nationalTeamId: teamId } : { teamId }
         const newPlayer = rec.action === 'new' ? await createPlayer({
           token,
-          payload: { firstName, lastName, teamId, tournamentId, position: lineupEntry?.position ?? '' }
+          payload: { firstName, lastName, ...teamField, tournamentId, position: lineupEntry?.position ?? '' }
         }) : await editPlayer({
           token,
           playerId: rec.playerId!,
-          payload: { firstName, lastName, teamId, tournamentId, position: lineupEntry?.position ?? '' }
+          payload: { firstName, lastName, ...teamField, tournamentId, position: lineupEntry?.position ?? '' }
         })
         if (newPlayer?.id) playerIdMap[name] = newPlayer.id
       }

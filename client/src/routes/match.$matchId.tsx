@@ -46,8 +46,9 @@ function MatchPage() {
   const [showESPN, setShowESPN] = useState(false)
   const homeTeamId = match?.homeTeamId ?? 0
   const awayTeamId = match?.awayTeamId ?? 0
-  const { data: homePlayers = [] } = usePlayersByTeam(homeTeamId)
-  const { data: awayPlayers = [] } = usePlayersByTeam(awayTeamId)
+  const teamType = match?.isNational ? 'national' : undefined
+  const { data: homePlayers = [] } = usePlayersByTeam(homeTeamId, teamType)
+  const { data: awayPlayers = [] } = usePlayersByTeam(awayTeamId, teamType)
 
   const isFinished = match?.status === 'finished'
   const homeEvents = useMemo(() => (match?.events ?? []).filter((e: any) => e.teamId === match?.homeTeamId), [match])
@@ -206,6 +207,7 @@ function MatchPage() {
           homePlayers={homePlayers}
           awayPlayers={awayPlayers}
           tournamentId={match.tournamentId}
+          isNational={!!match.isNational}
           onClose={() => setShowESPN(false)}
         />
       )}

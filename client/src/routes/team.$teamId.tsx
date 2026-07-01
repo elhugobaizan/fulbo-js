@@ -240,7 +240,7 @@ function TeamPage() {
     enabled: local,
   })
 
-  const { data: localPlayers = [] } = usePlayersByTeam(local ? numericId : 0)
+  const { data: localPlayers = [] } = usePlayersByTeam(local ? numericId : 0, teamType)
   const { data: tournamentTeams = [] } = useTournamentTeams(local ? tournamentId : 0)
   const { data: teamTournaments = [] } = useTeamTournaments(local ? numericId : 0, teamType)
   const [showAddPlayer, setShowAddPlayer] = useState(false)
@@ -313,6 +313,7 @@ function TeamPage() {
               tournamentId={tournamentId}
               teams={tournamentTeams.length > 0 ? tournamentTeams : (localTeam ? [localTeam] : [])}
               defaultTeamId={numericId}
+              isNational={isNational}
               onClose={() => setShowAddPlayer(false)}
             />
           )}

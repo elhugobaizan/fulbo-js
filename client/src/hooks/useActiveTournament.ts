@@ -10,6 +10,7 @@ export interface ActiveTournament {
   qualifiersPerGroup: number
   active: boolean
   knockoutStarted: boolean
+  teamType: string
 }
 
 async function fetchActiveTournament(): Promise<ActiveTournament | null> {

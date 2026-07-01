@@ -137,14 +137,15 @@ function LoginForm({ onLogin }: { onLogin: (token: string) => void }) {
 
 // ─── Match Result Form ────────────────────────────────────────────────────────
 
-function MatchResultForm({ match, tournamentId, token, onSaved, onClose }: { match: any; tournamentId: number; token: string; onSaved: () => void; onClose: () => void }) {
+function MatchResultForm({ match, tournamentId, token, isNational = false, onSaved, onClose }: { match: any; tournamentId: number; token: string; isNational?: boolean; onSaved: () => void; onClose: () => void }) {
   const [homeScore, setHomeScore] = useState(match.homeScore ?? '')
   const [awayScore, setAwayScore] = useState(match.awayScore ?? '')
   const [homePen, setHomePen] = useState(match.homePenalties ?? '')
   const [awayPen, setAwayPen] = useState(match.awayPenalties ?? '')
   const queryClient = useQueryClient()
-  const { data: homePlayers = [] } = usePlayersByTeam(match.homeTeam?.id ?? 0)
-  const { data: awayPlayers = [] } = usePlayersByTeam(match.awayTeam?.id ?? 0)
+  const teamType = isNational ? 'national' : undefined
+  const { data: homePlayers = [] } = usePlayersByTeam(match.homeTeam?.id ?? 0, teamType)
+  const { data: awayPlayers = [] } = usePlayersByTeam(match.awayTeam?.id ?? 0, teamType)
 
   const showPenalties = homeScore !== '' && awayScore !== '' &&
     Number(homeScore) === Number(awayScore) && match.phase === 'knockout'
@@ -557,9 +558,9 @@ function BracketRulesSection({ token, groups, tournamentId, hasGroups = true }: 
 
 // ─── Groups Section ───────────────────────────────────────────────────────────
 
-function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, setEditingMatch, tournamentId, allowCrossGroup }: {
+function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, setEditingMatch, tournamentId, allowCrossGroup, isNational = false }: {
   allMatches: any[]; allTeams: any[]; groupsData: any[]; token: string
-  editingMatch: number | null; setEditingMatch: (id: number | null) => void; tournamentId: number; allowCrossGroup: boolean
+  editingMatch: number | null; setEditingMatch: (id: number | null) => void; tournamentId: number; allowCrossGroup: boolean; isNational?: boolean
 }) {
   const allMatchdays = useMemo(
     () => [...new Set(allMatches.filter(m => m.matchday).map(m => m.matchday as number))].sort((a, b) => a - b),
@@ -623,7 +624,7 @@ function GroupsSection({ allMatches, allTeams, groupsData, token, editingMatch, 
                   return (
                     <div key={match.id}>
                       {editingMatch === match.id ? (
-                        <MatchResultForm match={enriched} tournamentId={tournamentId} token={token} onSaved={() => setEditingMatch(null)} onClose={() => setEditingMatch(null)} />
+                        <MatchResultForm match={enriched} tournamentId={tournamentId} token={token} isNational={isNational} onSaved={() => setEditingMatch(null)} onClose={() => setEditingMatch(null)} />
                       ) : (
                         <button onClick={() => setEditingMatch(match.id)}
                           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors text-left ${match.status === 'finished' ? 'border-gray-800 bg-gray-900/40 hover:bg-gray-900/70' : 'border-dashed border-gray-700 hover:border-gray-500'}`}>
@@ -801,6 +802,7 @@ function AdminPanel({ token, onLogout }: { token: string; onLogout: () => void; 
           setEditingMatch={setEditingMatch}
           tournamentId={tournamentId}
           allowCrossGroup={(tournament as any)?.allowCrossGroup ?? false}
+          isNational={(tournament as any)?.teamType === 'national'}
         />
       )}
 

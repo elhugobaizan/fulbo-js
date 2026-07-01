@@ -103,6 +103,7 @@ function PlayersPage() {
         <AddPlayerModal
           tournamentId={tournamentId}
           teams={teamsList}
+          isNational={activeTournament?.teamType === 'national'}
           onClose={() => setShowAddPlayer(false)}
         />
       )}

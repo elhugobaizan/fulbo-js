@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { eq, and, inArray, sql } from 'drizzle-orm'
-import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents, matchLineups, nationalTeams } from './_lib/tournament-schema'
+import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents, matchLineups, nationalTeams, players } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
 import { checkPassword, createSessionToken, verifySessionToken } from './_lib/auth'
 
@@ -286,29 +286,82 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(204).end()
     }
 
-    // create local player
-    if (action === 'create-player' && req.method === 'POST') {
-      const { firstName, lastName, teamId, tournamentId, position } = req.body
-      if (!firstName || !lastName || !teamId || !tournamentId) return err(res, 'Missing fields', 400)
-      const [player] = await db.insert(localPlayers).values({
-        firstName, lastName, position: position ?? null,
-        teamId: Number(teamId),
-        tournamentId: Number(tournamentId),
-      }).returning()
-      return res.status(201).json({ data: player })
+    // search players by name across the whole app (to link instead of duplicating a person)
+    if (action === 'search-players' && req.method === 'GET') {
+      const q = String(req.query.q ?? '').trim()
+      if (q.length < 2) return ok(res, [])
+      const matchedPlayers = await db.select().from(players)
+        .where(sql`${players.firstName} || ' ' || ${players.lastName} ILIKE ${'%' + q + '%'}`)
+        .limit(20)
+      const personIds = matchedPlayers.map((p) => p.id)
+      const memberships = personIds.length > 0
+        ? await db.select({
+          link: localPlayers,
+          team: teams,
+          nationalTeam: nationalTeams,
+          tournament: tournaments,
+        })
+          .from(localPlayers)
+          .leftJoin(teams, eq(localPlayers.teamId, teams.id))
+          .leftJoin(nationalTeams, eq(localPlayers.nationalTeamId, nationalTeams.id))
+          .innerJoin(tournaments, eq(localPlayers.tournamentId, tournaments.id))
+          .where(inArray(localPlayers.personId, personIds))
+        : []
+      const results = matchedPlayers.map((p) => ({
+        ...p,
+        memberships: memberships
+          .filter((m) => m.link.personId === p.id)
+          .map((m) => ({
+            teamName: m.team?.name ?? m.nationalTeam?.name ?? null,
+            tournamentName: m.tournament.shortName ?? m.tournament.name,
+            position: m.link.position,
+          })),
+      }))
+      return ok(res, results)
     }
 
-    // edit local player
-    if (action === 'edit-player' && req.method === 'POST') {
-      const { playerId, firstName, lastName, teamId, position } = req.body
-      if (!playerId || !firstName || !lastName || !teamId) return err(res, 'Missing fields', 400)
-      const [player] = await db.update(localPlayers).set({
-        firstName,
-        lastName,
+    // create local player: reuses an existing person (existingPlayerId) or creates a new one
+    if (action === 'create-player' && req.method === 'POST') {
+      const { firstName, lastName, existingPlayerId, teamId, nationalTeamId, tournamentId, position } = req.body
+      if (!tournamentId || (!teamId && !nationalTeamId)) return err(res, 'tournamentId and teamId or nationalTeamId required', 400)
+
+      let personId: number
+      if (existingPlayerId) {
+        personId = Number(existingPlayerId)
+      } else {
+        if (!firstName || !lastName) return err(res, 'firstName and lastName required (or an existingPlayerId)', 400)
+        const [person] = await db.insert(players).values({ firstName, lastName }).returning()
+        personId = person.id
+      }
+
+      const [link] = await db.insert(localPlayers).values({
+        personId,
         position: position ?? null,
-        teamId: Number(teamId),
+        teamId: teamId ? Number(teamId) : null,
+        nationalTeamId: nationalTeamId ? Number(nationalTeamId) : null,
+        tournamentId: Number(tournamentId),
+      }).returning()
+
+      const [person] = await db.select().from(players).where(eq(players.id, personId))
+      return res.status(201).json({ data: { ...link, firstName: person.firstName, lastName: person.lastName } })
+    }
+
+    // edit local player: name/externalId live on `players`, position/team live on the local_players link
+    if (action === 'edit-player' && req.method === 'POST') {
+      const { playerId, firstName, lastName, teamId, nationalTeamId, position } = req.body
+      if (!playerId || !firstName || !lastName || (!teamId && !nationalTeamId)) return err(res, 'Missing fields', 400)
+
+      const [existingLink] = await db.select().from(localPlayers).where(eq(localPlayers.id, Number(playerId)))
+      if (!existingLink) return err(res, 'Player not found', 404)
+
+      await db.update(players).set({ firstName, lastName }).where(eq(players.id, existingLink.personId))
+      const [link] = await db.update(localPlayers).set({
+        position: position ?? null,
+        teamId: teamId ? Number(teamId) : null,
+        nationalTeamId: nationalTeamId ? Number(nationalTeamId) : null,
       }).where(eq(localPlayers.id, Number(playerId))).returning()
-      return ok(res, { data: player })
+
+      return ok(res, { data: { ...link, firstName, lastName } })
     }
 
     // set match lineup
