@@ -59,6 +59,8 @@ export function useCreateEvent(matchId: number) {
       createEvent(token, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['match-events', matchId] })
+      queryClient.invalidateQueries({ queryKey: ['local-fixtures'] })
+      queryClient.invalidateQueries({ queryKey: ['knockout-fixtures'] })
       queryClient.invalidateQueries({ queryKey: ['local-topscorers'] })
       queryClient.invalidateQueries({ queryKey: ['local-topassists'] })
       queryClient.invalidateQueries({ queryKey: ['local-topcards'] })
@@ -84,6 +86,8 @@ export function useDeleteEvent(matchId: number) {
       deleteEvent(token, eventId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['match-events', matchId] })
+      queryClient.invalidateQueries({ queryKey: ['local-fixtures'] })
+      queryClient.invalidateQueries({ queryKey: ['knockout-fixtures'] })
       queryClient.invalidateQueries({ queryKey: ['local-topscorers'] })
       queryClient.invalidateQueries({ queryKey: ['local-topassists'] })
       queryClient.invalidateQueries({ queryKey: ['local-topcards'] })
