@@ -55,7 +55,7 @@ export function StandingsTable({ standings, leagueId, leagueName, teamType }: St
                   ${index % 2 === 0 ? 'bg-gray-900/30' : 'bg-transparent'}
                   ${getDescriptionStyle(standing.description)}
                 `}
-                onClick={() => navigate({ to: '/team/$teamId', params: { teamId: String(standing.team.id) }, search: { leagueId, leagueName } })}
+                onClick={() => navigate({ to: '/team/$teamId', params: { teamId: String(standing.team.id) }, search: { leagueId, leagueName, ...(teamType ? { teamType } : {}) } })}
               >
                 <td className="pl-4 pr-2 py-3" onClick={(e) => e.stopPropagation()}>
                   <span className={`text-sm font-bold ${standing.rank <= 1 ? 'text-yellow-400' : 'text-gray-400'}`}>

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useRouter, Link } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Pencil, Users, Download } from 'lucide-react'
@@ -35,6 +35,14 @@ async function fetchMatchDetail(matchId: number) {
 function MatchPage() {
   const { matchId } = Route.useParams()
   const navigate = useNavigate()
+  const router = useRouter()
+
+  const handleBack = () => {
+    // Volver a donde el usuario estaba (fixtures, bracket, pagina del equipo, etc.).
+    // Si entro directo por URL y no hay historial, caer a fixtures.
+    if (router.history.canGoBack()) router.history.back()
+    else navigate({ to: '/fixtures' })
+  }
   const { data: match, isLoading } = useQuery({
     queryKey: ['match-detail', Number(matchId)],
     queryFn: () => fetchMatchDetail(Number(matchId)),
@@ -72,9 +80,9 @@ function MatchPage() {
 
   return (
     <div className="space-y-5">
-      <button onClick={() => navigate({ to: '/fixtures' })}
+      <button onClick={handleBack}
         className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm">
-        <ArrowLeft size={16} /> Volver a fixtures
+        <ArrowLeft size={16} /> Volver
       </button>
 
       {/* Match header */}
@@ -88,7 +96,7 @@ function MatchPage() {
         <div className="flex items-center gap-4">
           {/* Home */}
           <div className="flex-1 flex flex-col items-center gap-2">
-            <Link to="/team/$teamId" params={{ teamId: String(match.homeTeamId) }} search={{ leagueId: match.tournamentId, leagueName: '' }}
+            <Link to="/team/$teamId" params={{ teamId: String(match.homeTeamId) }} search={{ leagueId: match.tournamentId, leagueName: '', ...(match.isNational ? { teamType: 'national' } : {}) }}
               className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity">
               <TeamBadge name={match.homeTeam?.name ?? '?'} logo={match.homeTeam?.logoUrl} size={52} />
               <p className="text-sm font-semibold text-white text-center">{match.homeTeam?.shortName ?? match.homeTeam?.name ?? '?'}</p>
@@ -126,7 +134,7 @@ function MatchPage() {
 
           {/* Away */}
           <div className="flex-1 flex flex-col items-center gap-2">
-            <Link to="/team/$teamId" params={{ teamId: String(match.awayTeamId) }} search={{ leagueId: match.tournamentId, leagueName: '' }}
+            <Link to="/team/$teamId" params={{ teamId: String(match.awayTeamId) }} search={{ leagueId: match.tournamentId, leagueName: '', ...(match.isNational ? { teamType: 'national' } : {}) }}
               className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity">
               <TeamBadge name={match.awayTeam?.name ?? '?'} logo={match.awayTeam?.logoUrl} size={52} />
               <p className="text-sm font-semibold text-white text-center">{match.awayTeam?.shortName ?? match.awayTeam?.name ?? '?'}</p>

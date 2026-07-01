@@ -60,7 +60,7 @@ function FavoritesPage() {
                 <Link
                   to="/team/$teamId"
                   params={{ teamId: String(fav.teamId) }}
-                  search={{ leagueId: fav.leagueId, leagueName: fav.leagueName }}
+                  search={{ leagueId: fav.leagueId, leagueName: fav.leagueName, ...(fav.teamType ? { teamType: fav.teamType } : {}) }}
                   className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
                   title="Ver plantel"
                 >
