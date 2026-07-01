@@ -14,44 +14,46 @@ interface LocalTeam {
   alternateColor: string | null;
 }
 
-function TournamentPills({ tournaments, teamId }: { tournaments?: any[], teamId: number }) {
-  if (!tournaments?.length) return null
-
+function TournamentPill({ tournament, teamId }: { tournament: any, teamId: number }) {
+  const { data: standings } = useLocalStandings(tournament.id)
+  const groupData = standings?.groups
+    .find((g: any) => g.standings.some((s: any) => s.team.id === teamId))
+  const rank = groupData?.standings.find((s: any) => s.team.id === teamId)?.rank ?? null
+  const groupName = groupData?.group?.name ?? null
 
   return (
-    <div className="mt-6 flex flex-wrap gap-3">
-      {tournaments.map((tournament) => {
-        const { data: standings } = useLocalStandings(tournament.id)
-        const groupData = standings?.groups
-          .find((g: any) => g.standings.some((s: any) => s.team.id === teamId))
-        const rank = groupData?.standings.find((s: any) => s.team.id === teamId)?.rank ?? null
-        const groupName = groupData?.group?.name ?? null
-
-        return (
-          <div
-            key={tournament.id}
-            className="
+    <div
+      className="
         min-w-[170px]
         rounded-2xl
         border border-white/[0.08]
         bg-white/[0.04]
         px-4 py-3
       "
-          >
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-emerald-400" />
+    >
+      <div className="flex items-center gap-2">
+        <div className="h-2 w-2 rounded-full bg-emerald-400" />
 
-              <span className="text-xs font-semibold text-slate-200">
-                {tournament.shortName || tournament.name}
-              </span>
-            </div>
+        <span className="text-xs font-semibold text-slate-200">
+          {tournament.shortName || tournament.name}
+        </span>
+      </div>
 
-            <div className="mt-2 text-sm font-bold text-white">
-              {rank}° en {groupName}
-            </div>
-          </div>
-        )
-      })}
+      <div className="mt-2 text-sm font-bold text-white">
+        {rank}° en {groupName}
+      </div>
+    </div>
+  )
+}
+
+function TournamentPills({ tournaments, teamId }: { tournaments?: any[], teamId: number }) {
+  if (!tournaments?.length) return null
+
+  return (
+    <div className="mt-6 flex flex-wrap gap-3">
+      {tournaments.map((tournament) => (
+        <TournamentPill key={tournament.id} tournament={tournament} teamId={teamId} />
+      ))}
     </div>
   )
 }
