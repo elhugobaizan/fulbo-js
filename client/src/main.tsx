@@ -27,19 +27,13 @@ declare module '@tanstack/react-router' {
   }
 }
 
-// En main.tsx o App.tsx
 const lockOrientation = async () => {
   const isPhone = /iPhone|Android.*Mobile|Windows Phone/i.test(navigator.userAgent)
-/* const div = document.createElement('div')
-div.style.cssText = 'position:fixed;top:0;left:0;z-index:9999;background:black;color:lime;font-size:11px;padding:8px;max-width:100vw;word-break:break-all'
-div.textContent = `UA: ${navigator.userAgent} | isPhone: ${isPhone} | ${window.innerWidth}x${window.innerHeight}`
-document.body.appendChild(div)  
- */  if (isPhone && (screen.orientation as any)?.lock) {
+  if (isPhone && (screen.orientation as any)?.lock) {
     try {
       await (screen.orientation as any).lock('portrait')
-      console.log('lock applied')
-    } catch (e) {
-      console.log('lock failed:', e)
+    } catch {
+      // orientation lock unsupported/denied — not critical, ignore
     }
   }
 }

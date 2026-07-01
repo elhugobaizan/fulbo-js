@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, X, Trophy, Calendar } from 'lucide-react'
+import { Check, X, Trophy, Calendar, Pencil } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { ROUND_LABELS_LONG as ROUND_LABELS, ROUND_ORDER } from '../config/rounds'
 import { formatMatchDateShort } from '../lib/date'
@@ -63,6 +63,21 @@ async function createBracketRule(token: string, payload: any) {
   const { data } = await apiClient.post('/admin?action=bracket-rules', payload, {
     headers: { 'x-admin-token': token },
   })
+  return data.data
+}
+
+async function fetchWildcardCandidates(token: string, tournamentId: number, knockoutRound: string, bracketPosition: number, side: 'home' | 'away') {
+  const { data } = await apiClient.get('/admin', {
+    params: { action: 'wildcard-candidates', tournamentId, knockoutRound, bracketPosition, side },
+    headers: { 'x-admin-token': token },
+  })
+  return data.data ?? []
+}
+
+async function setMatchTeam(token: string, matchId: number, side: 'home' | 'away', teamId: number) {
+  const { data } = await apiClient.patch('/admin?action=set-match-team',
+    { matchId, side, teamId }, { headers: { 'x-admin-token': token } }
+  )
   return data.data
 }
 
@@ -226,6 +241,57 @@ function WildcardSlotLabel({ match, rules, groups }: { match: any; rules: any[];
   )
 }
 
+// ─── Wildcard Team Picker ─────────────────────────────────────────────────────
+// Lets the admin manually override which team fills a wildcard slot (e.g. "3° B/C/D")
+// when the auto-generated cross didn't match the real-world draw
+
+function WildcardTeamPicker({ token, tournamentId, match, side, onDone }: {
+  token: string; tournamentId: number; match: any; side: 'home' | 'away'; onDone: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [selected, setSelected] = useState('')
+
+  const { data: candidates = [], isLoading } = useQuery({
+    queryKey: ['wildcard-candidates', tournamentId, match.knockoutRound, match.bracketPosition, side],
+    queryFn: () => fetchWildcardCandidates(token, tournamentId, match.knockoutRound, match.bracketPosition, side),
+  })
+
+  const mutation = useMutation<any, Error, void>({
+    mutationFn: () => setMatchTeam(token, match.id, side, Number(selected)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knockout-matches', tournamentId] })
+      onDone()
+    },
+  })
+
+  return (
+    <div className="flex items-center gap-2">
+      {isLoading ? (
+        <span className="text-xs text-gray-500">Cargando candidatos...</span>
+      ) : candidates.length === 0 ? (
+        <span className="text-xs text-gray-500">Sin candidatos (cargá los resultados de grupos primero)</span>
+      ) : (
+        <select value={selected} onChange={e => setSelected(e.target.value)}
+          className="flex-1 px-2 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]">
+          <option value="">Elegir equipo...</option>
+          {candidates.map((c: any) => (
+            <option key={c.teamId} value={c.teamId}>
+              {c.team?.shortName ?? c.team?.name} — {c.groupName} ({c.points} pts, {c.goalsFor}-{c.goalsAgainst})
+            </option>
+          ))}
+        </select>
+      )}
+      <button onClick={() => mutation.mutate()} disabled={!selected || mutation.isPending}
+        className="px-3 py-1 rounded-lg bg-emerald-600 text-white text-xs disabled:opacity-50">
+        <Check size={12} />
+      </button>
+      <button onClick={onDone} className="px-3 py-1 rounded-lg bg-gray-700 text-gray-300 text-xs">
+        <X size={12} />
+      </button>
+    </div>
+  )
+}
+
 // ─── Knockout Section ─────────────────────────────────────────────────────────
 
 export function KnockoutSection({ token, tournamentId, tournament, groups = [] }: {
@@ -234,6 +300,7 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
   const queryClient = useQueryClient()
   const [editingDate, setEditingDate] = useState<number | null>(null)
   const [dateValue, setDateValue] = useState('')
+  const [editingTeamSlot, setEditingTeamSlot] = useState<{ matchId: number; side: 'home' | 'away' } | null>(null)
 
   const hasGroups = (tournament as any)?.hasGroups ?? true
   const tournamentCountry = (tournament as any)?.country ?? null
@@ -353,20 +420,54 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
               <span className="text-[10px] text-emerald-500">✓ Completa</span>
             )}
           </div>
-          {(byRound[round] as any[]).map((match: any) => (
+          {(byRound[round] as any[]).map((match: any) => {
+            const rule = (bracketRulesData as any[]).find((r: any) =>
+              r.knockoutRound === match.knockoutRound && r.bracketPosition === match.bracketPosition
+            )
+            const canEditTeam = match.status !== 'finished'
+            const homeIsWildcard = canEditTeam && rule?.homeGroupId === null && !!rule?.wildcardGroupIds
+            const awayIsWildcard = canEditTeam && rule?.awayGroupId === null && !!rule?.wildcardGroupIds
+            const editingHome = editingTeamSlot?.matchId === match.id && editingTeamSlot?.side === 'home'
+            const editingAway = editingTeamSlot?.matchId === match.id && editingTeamSlot?.side === 'away'
+
+            return (
             <div key={match.id} className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-3 space-y-2">
               <div className="flex items-center gap-3">
-                <span className="text-sm text-white flex-1 text-right truncate font-medium">
-                  {match.homeTeam?.shortName ?? match.homeTeam?.name ?? '?'}
-                </span>
+                <div className="flex-1 flex items-center justify-end gap-1 min-w-0">
+                  <span className="text-sm text-white truncate font-medium">
+                    {match.homeTeam?.shortName ?? match.homeTeam?.name ?? '?'}
+                  </span>
+                  {homeIsWildcard && (
+                    <button onClick={() => setEditingTeamSlot(editingHome ? null : { matchId: match.id, side: 'home' })}
+                      className="text-gray-600 hover:text-[#74ACDF] flex-shrink-0" title="Cambiar equipo (wildcard)">
+                      <Pencil size={11} />
+                    </button>
+                  )}
+                </div>
                 <span className={`text-sm font-bold w-16 text-center ${match.status === 'finished' ? 'text-white' : 'text-gray-600'}`}>
                   {match.status === 'finished' ? `${match.homeScore} - ${match.awayScore}` : 'vs'}
                 </span>
-                <span className="text-sm text-white flex-1 truncate font-medium">
-                  {match.awayTeam?.shortName ?? match.awayTeam?.name ?? '?'}
-                </span>
+                <div className="flex-1 flex items-center gap-1 min-w-0">
+                  <span className="text-sm text-white truncate font-medium">
+                    {match.awayTeam?.shortName ?? match.awayTeam?.name ?? '?'}
+                  </span>
+                  {awayIsWildcard && (
+                    <button onClick={() => setEditingTeamSlot(editingAway ? null : { matchId: match.id, side: 'away' })}
+                      className="text-gray-600 hover:text-[#74ACDF] flex-shrink-0" title="Cambiar equipo (wildcard)">
+                      <Pencil size={11} />
+                    </button>
+                  )}
+                </div>
               </div>
               <WildcardSlotLabel match={match} rules={bracketRulesData} groups={groups} />
+              {editingHome && (
+                <WildcardTeamPicker token={token} tournamentId={tournamentId} match={match} side="home"
+                  onDone={() => setEditingTeamSlot(null)} />
+              )}
+              {editingAway && (
+                <WildcardTeamPicker token={token} tournamentId={tournamentId} match={match} side="away"
+                  onDone={() => setEditingTeamSlot(null)} />
+              )}
               {editingDate === match.id ? (
                 <div className="flex gap-2">
                   <input type="datetime-local" value={dateValue} onChange={e => setDateValue(e.target.value)}
@@ -393,7 +494,8 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
                 </div>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       ))}
     </div>

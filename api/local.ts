@@ -149,7 +149,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (isNationalTeam) {
         const raw = await db.execute(sql`SELECT id FROM tournaments WHERE team_type = 'national'`)
         nationalTournamentIds = new Set(((raw as any).rows ?? []).map((r: any) => Number(r.id)))
-        console.log('nationalTournamentIds:', [...nationalTournamentIds])
       }
 
       const all = req.query.all === 'true'

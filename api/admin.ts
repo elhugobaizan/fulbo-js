@@ -491,6 +491,98 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return ok(res, { created: created.length })
     }
 
+    // wildcard slot candidates: teams eligible for a wildcard slot (e.g. "3° B/C/D") of a knockout match
+    if (action === 'wildcard-candidates' && req.method === 'GET') {
+      const tournamentId = Number(req.query.tournamentId)
+      const knockoutRound = req.query.knockoutRound
+      const bracketPosition = Number(req.query.bracketPosition)
+      const side = req.query.side
+      if (!tournamentId || !knockoutRound || !bracketPosition || (side !== 'home' && side !== 'away')) {
+        return err(res, 'tournamentId, knockoutRound, bracketPosition and side required', 400)
+      }
+
+      const [rule] = await db.select().from(bracketRules).where(and(
+        eq(bracketRules.tournamentId, tournamentId),
+        eq(bracketRules.knockoutRound, knockoutRound as any),
+        eq(bracketRules.bracketPosition, bracketPosition)
+      ))
+      if (!rule?.wildcardGroupIds) return ok(res, [])
+
+      const position = side === 'home' ? rule.homePosition : rule.awayPosition
+      if (!position) return ok(res, [])
+      const wcGroupIds = rule.wildcardGroupIds.split(',').map(Number)
+
+      const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId))
+      const isNational = (tournament as any)?.teamType === 'national'
+
+      const groupsData = await db.select().from(groups).where(inArray(groups.id, wcGroupIds))
+      const groupsWithTeams = await Promise.all(groupsData.map(async (group) => {
+        const members = isNational
+          ? (await db.select({ teamId: (groupTeams as any).nationalTeamId, team: nationalTeams })
+            .from(groupTeams).innerJoin(nationalTeams, eq((groupTeams as any).nationalTeamId, nationalTeams.id))
+            .where(eq(groupTeams.groupId, group.id))).map((r: any) => ({ ...r, team: { ...r.team, logoUrl: r.team.flagUrl, shortName: r.team.name } }))
+          : await db.select({ teamId: groupTeams.teamId, team: teams })
+            .from(groupTeams).innerJoin(teams, eq(groupTeams.teamId, teams.id))
+            .where(eq(groupTeams.groupId, group.id))
+        return { ...group, members }
+      }))
+
+      const allGroupMatches = await db.select().from(matches).where(and(
+        eq(matches.tournamentId, tournamentId), eq(matches.phase, 'group'), eq(matches.status, 'finished')
+      ))
+
+      const candidates = groupsWithTeams.flatMap((group) => {
+        const gTeamIds = new Set(group.members.map((m: any) => m.teamId).filter(Boolean))
+        const relevant = allGroupMatches.filter((m: any) => gTeamIds.has(m.homeTeamId) || gTeamIds.has(m.awayTeamId))
+        const stats: Record<number, any> = {}
+        for (const gt of group.members as any[]) {
+          if (!gt.teamId) continue
+          stats[gt.teamId] = { teamId: gt.teamId, team: gt.team, played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, points: 0 }
+        }
+        for (const m of relevant) {
+          const hg = m.homeScore ?? 0, ag = m.awayScore ?? 0
+          if (m.homeTeamId && gTeamIds.has(m.homeTeamId)) {
+            const h = stats[m.homeTeamId]; h.played++; h.goalsFor += hg; h.goalsAgainst += ag
+            if (hg > ag) { h.won++; h.points += 3 } else if (hg < ag) h.lost++; else { h.drawn++; h.points++ }
+          }
+          if (m.awayTeamId && gTeamIds.has(m.awayTeamId)) {
+            const a = stats[m.awayTeamId]; a.played++; a.goalsFor += ag; a.goalsAgainst += hg
+            if (ag > hg) { a.won++; a.points += 3 } else if (ag < hg) a.lost++; else { a.drawn++; a.points++ }
+          }
+        }
+        const ranked: any[] = Object.values(stats).sort((a: any, b: any) => {
+          if (b.points !== a.points) return b.points - a.points
+          const da = a.goalsFor - a.goalsAgainst, db2 = b.goalsFor - b.goalsAgainst
+          if (db2 !== da) return db2 - da
+          return b.goalsFor - a.goalsFor
+        })
+        const candidate = ranked[position - 1]
+        return candidate ? [{ ...candidate, groupId: group.id, groupName: group.name }] : []
+      })
+
+      candidates.sort((a: any, b: any) => {
+        if (b.points !== a.points) return b.points - a.points
+        const da = a.goalsFor - a.goalsAgainst, db2 = b.goalsFor - b.goalsAgainst
+        if (db2 !== da) return db2 - da
+        return b.goalsFor - a.goalsFor
+      })
+
+      return ok(res, candidates)
+    }
+
+    // manually override which team fills a knockout match slot (e.g. wrong wildcard auto-assigned)
+    if (action === 'set-match-team' && req.method === 'PATCH') {
+      const { matchId, side, teamId } = req.body
+      if (!matchId || !teamId || (side !== 'home' && side !== 'away')) {
+        return err(res, 'matchId, side and teamId required', 400)
+      }
+      const setFields = side === 'home'
+        ? { homeTeamId: Number(teamId), updatedAt: new Date() }
+        : { awayTeamId: Number(teamId), updatedAt: new Date() }
+      const [updated] = await db.update(matches).set(setFields as any).where(eq(matches.id, Number(matchId))).returning()
+      return ok(res, updated)
+    }
+
     return err(res, 'Unknown action', 400)
   } catch (error) {
     console.error(error)

@@ -347,7 +347,6 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
               ? { name: slot.homeTeam?.name ?? slot.homeLabel, logoUrl: slot.homeTeam?.logoUrl }
               : { name: slot.awayTeam?.name ?? slot.awayLabel, logoUrl: slot.awayTeam?.logoUrl }
           }
-          console.log(champion)
           return (
             <div key={`F-${slot.ruleId}`}>
               {champion && (
