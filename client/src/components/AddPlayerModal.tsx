@@ -14,9 +14,9 @@ interface AddPlayerModalProps {
   onClose: () => void
 }
 
-async function authenticate(password: string): Promise<boolean> {
+async function authenticate(password: string): Promise<string | null> {
   const { data } = await apiClient.post('/admin?action=auth', { password })
-  return data.data?.authenticated === true
+  return data.data?.token ?? null
 }
 
 export function AddPlayerModal({ tournamentId, teams, defaultTeamId, onClose }: AddPlayerModalProps) {
@@ -37,10 +37,10 @@ export function AddPlayerModal({ tournamentId, teams, defaultTeamId, onClose }: 
   const handleAuth = async () => {
     setAuthLoading(true)
     try {
-      const ok = await authenticate(password)
-      if (ok) {
-        sessionStorage.setItem(STORAGE_KEY, password)
-        setToken(password)
+      const newToken = await authenticate(password)
+      if (newToken) {
+        sessionStorage.setItem(STORAGE_KEY, newToken)
+        setToken(newToken)
         setAuthenticated(true)
       } else setAuthError('Password incorrecto')
     } catch { setAuthError('Password incorrecto') }

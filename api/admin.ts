@@ -4,13 +4,14 @@ import { drizzle } from 'drizzle-orm/neon-http'
 import { eq, and, inArray, sql } from 'drizzle-orm'
 import { matches, teams, groups, groupTeams, tournaments, bracketRules, localPlayers, matchEvents, matchLineups, nationalTeams } from './_lib/tournament-schema'
 import { ok, err } from './_lib/helpers'
+import { checkPassword, createSessionToken, verifySessionToken } from './_lib/auth'
 
 function getDb() {
   return drizzle(neon(process.env.DATABASE_URL!))
 }
 
 function checkAuth(req: VercelRequest): boolean {
-  return req.headers['x-admin-token'] === process.env.ADMIN_PASSWORD
+  return verifySessionToken(req.headers['x-admin-token'])
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -21,8 +22,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === 'auth' && req.method === 'POST') {
     const { password } = req.body
     if (!password) return err(res, 'Password required', 400)
-    if (password !== process.env.ADMIN_PASSWORD) return err(res, 'Invalid password', 401)
-    return ok(res, { authenticated: true })
+    if (!checkPassword(password)) return err(res, 'Invalid password', 401)
+    return ok(res, { authenticated: true, token: createSessionToken() })
   }
 
   // ── Protected routes ──────────────────────────────────────────────────────
@@ -357,7 +358,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'generate-knockout' && req.method === 'POST') {
       const { tournamentId, round } = req.body
       if (!tournamentId || !round) return err(res, 'tournamentId and round required', 400)
-      if (!tournamentId) return err(res, 'tournamentId required', 400)
       const tid = Number(tournamentId)
 
       // Check if matches already exist

@@ -63,7 +63,7 @@ function ResultModal({ match, onClose }: { match: any; onClose: () => void }) {
       return data.data
     },
     onSuccess: (data) => {
-      if (data?.authenticated) { sessionStorage.setItem(ADMIN_TOKEN_KEY, password); setAuthenticated(true) }
+      if (data?.token) { sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token); setAuthenticated(true) }
       else setAuthError('Password incorrecto')
     },
     onError: () => setAuthError('Password incorrecto'),
@@ -71,7 +71,7 @@ function ResultModal({ match, onClose }: { match: any; onClose: () => void }) {
 
   const saveMutation = useMutation<any, Error, void>({
     mutationFn: async () => {
-      const t = sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? password
+      const t = sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? ''
       const { data } = await apiClient.patch('/admin?action=matches', {
         matchId: match.id, homeScore: Number(homeScore), awayScore: Number(awayScore),
         homePenalties: showPenalties && homePen !== '' ? Number(homePen) : null,

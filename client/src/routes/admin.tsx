@@ -15,9 +15,9 @@ export const Route = createFileRoute('/admin')({
 
 // ─── API calls ───────────────────────────────────────────────────────────────
 
-async function authenticate(password: string): Promise<boolean> {
+async function authenticate(password: string): Promise<string | null> {
   const { data } = await apiClient.post('/admin?action=auth', { password })
-  return data.data?.authenticated === true
+  return data.data?.token ?? null
 }
 
 async function fetchTournamentData(token: string, tournamentId: number) {
@@ -95,10 +95,10 @@ function LoginForm({ onLogin }: { onLogin: (token: string) => void }) {
     setLoading(true)
     setError('')
     try {
-      const ok = await authenticate(password)
-      if (ok) {
-        sessionStorage.setItem(ADMIN_TOKEN_KEY, password)
-        onLogin(password)
+      const newToken = await authenticate(password)
+      if (newToken) {
+        sessionStorage.setItem(ADMIN_TOKEN_KEY, newToken)
+        onLogin(newToken)
       } else {
         setError('Password incorrecto')
       }

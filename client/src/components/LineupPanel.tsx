@@ -30,9 +30,9 @@ interface LineupPanelProps {
   awayPlayers: Player[]
 }
 
-async function authenticate(password: string): Promise<boolean> {
+async function authenticate(password: string): Promise<string | null> {
   const { data } = await apiClient.post('/admin?action=auth', { password })
-  return data.data?.authenticated === true
+  return data.data?.token ?? null
 }
 
 function PlayerList({ players, selected, onToggle, onToggleStarter }: {
@@ -164,8 +164,8 @@ export function LineupPanel({ matchId, homeTeam, awayTeam, homePlayers, awayPlay
   const handleAuth = async () => {
     setAuthLoading(true)
     try {
-      const ok = await authenticate(password)
-      if (ok) { sessionStorage.setItem(STORAGE_KEY, password); setToken(password); setAuthenticated(true) }
+      const newToken = await authenticate(password)
+      if (newToken) { sessionStorage.setItem(STORAGE_KEY, newToken); setToken(newToken); setAuthenticated(true) }
       else setAuthError('Password incorrecto')
     } catch { setAuthError('Password incorrecto') }
     finally { setAuthLoading(false) }

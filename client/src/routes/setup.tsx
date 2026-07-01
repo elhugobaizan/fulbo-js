@@ -54,9 +54,9 @@ async function deleteTournament(token: string, tournamentId: number) {
   })
 }
 
-async function authenticate(password: string): Promise<boolean> {
+async function authenticate(password: string): Promise<string | null> {
   const { data } = await apiClient.post('/admin?action=auth', { password })
-  return data.data?.authenticated === true
+  return data.data?.token ?? null
 }
 
 // ─── Wizard state persistence ─────────────────────────────────────────────────
@@ -762,8 +762,8 @@ function LoginForm({ onLogin }: { onLogin: (token: string) => void }) {
   const handleSubmit = async () => {
     setLoading(true)
     try {
-      const ok = await authenticate(password)
-      if (ok) { sessionStorage.setItem(STORAGE_KEY, password); onLogin(password) }
+      const newToken = await authenticate(password)
+      if (newToken) { sessionStorage.setItem(STORAGE_KEY, newToken); onLogin(newToken) }
       else setError('Password incorrecto')
     } catch { setError('Password incorrecto') }
     finally { setLoading(false) }
