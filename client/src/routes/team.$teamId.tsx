@@ -71,15 +71,13 @@ function NoSquad({ isLocal }: { isLocal: boolean }) {
 function TeamTabs({
   activeTab,
   setActiveTab,
-  isNational = false,
 }: {
   activeTab: 'fixtures' | 'squad'
   setActiveTab: (tab: 'fixtures' | 'squad') => void
-  isNational?: boolean
 }) {
   const tabs = [
     { id: 'fixtures' as const, label: 'Partidos' },
-    ...(!isNational ? [{ id: 'squad' as const, label: 'Plantel' }] : []),
+    { id: 'squad' as const, label: 'Plantel' },
   ]
 
   return (
@@ -147,9 +145,16 @@ function MatchRow({ match }: { match: any }) {
 
         <div className="min-w-[72px] rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2 text-center">
           {match.status === 'finished' ? (
-            <span className="text-xl font-bold tracking-tight text-white">
-              {match.homeScore} - {match.awayScore}
-            </span>
+            <>
+              <span className="text-xl font-bold tracking-tight text-white">
+                {match.homeScore} - {match.awayScore}
+              </span>
+              {match.homePenalties !== null && match.homePenalties !== undefined && (
+                <span className="block text-[11px] font-medium text-yellow-400">
+                  ({match.homePenalties} - {match.awayPenalties} pen.)
+                </span>
+              )}
+            </>
           ) : (
             <span className="text-sm font-semibold text-slate-400">
               vs
@@ -274,10 +279,10 @@ function TeamPage() {
       ) : null}
 
       {/* Tab toggle - only for local teams */}
-      <TeamTabs activeTab={activeTab} setActiveTab={setActiveTab} isNational={isNational} />
+      <TeamTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Local squad */}
-      {local && !isNational && activeTab === 'squad' && (
+      {local && activeTab === 'squad' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-400">
@@ -321,6 +326,7 @@ function TeamPage() {
             <LocalPlayerModal
               player={selectedLocalPlayer}
               tournamentId={tournamentId}
+              isNational={isNational}
               onClose={() => setSelectedLocalPlayer(null)}
             />
           )}

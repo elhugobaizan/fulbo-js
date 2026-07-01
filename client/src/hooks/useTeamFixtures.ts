@@ -11,6 +11,8 @@ export interface TeamFixture {
   awayTeam: { id: number; name: string; shortName: string | null; logoUrl: string | null } | null
   homeScore: number | null
   awayScore: number | null
+  homePenalties: number | null
+  awayPenalties: number | null
 }
 
 async function fetchTeamFixtures(teamId: number, limit = 3, all = false, teamType?: string): Promise<TeamFixture[]> {

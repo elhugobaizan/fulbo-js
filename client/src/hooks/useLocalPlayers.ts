@@ -132,6 +132,22 @@ export function usePlayerStats(playerId: number | null, tournamentId: number) {
   })
 }
 
+export interface Membership { name: string; logoUrl: string | null }
+
+async function fetchPlayerMemberships(playerId: number): Promise<{ clubs: Membership[]; nations: Membership[] }> {
+  const { data } = await apiClient.get('/local', { params: { resource: 'player-memberships', playerId } })
+  return data.data ?? { clubs: [], nations: [] }
+}
+
+export function usePlayerMemberships(playerId: number | null) {
+  return useQuery({
+    queryKey: ['player-memberships', playerId],
+    queryFn: () => fetchPlayerMemberships(playerId!),
+    enabled: !!playerId,
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
 export function useCreatePlayer() {
   const queryClient = useQueryClient()
   return useMutation({

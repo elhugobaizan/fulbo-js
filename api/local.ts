@@ -136,6 +136,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return ok(res, team)
     }
 
+    // player memberships - todos los clubes/selecciones de la misma persona (no tournamentId needed)
+    if (resource === 'player-memberships') {
+      const linkId = Number(req.query.playerId) // local_players.id
+      if (!linkId) return err(res, 'playerId required', 400)
+      const [link] = await db.select().from(localPlayers).where(eq(localPlayers.id, linkId))
+      if (!link) return ok(res, { clubs: [], nations: [] })
+      const allLinks = await db.select({ link: localPlayers, team: teams, nationalTeam: nationalTeams })
+        .from(localPlayers)
+        .leftJoin(teams, eq(localPlayers.teamId, teams.id))
+        .leftJoin(nationalTeams, eq(localPlayers.nationalTeamId, nationalTeams.id))
+        .where(eq(localPlayers.personId, link.personId))
+      const clubsMap = new Map<number, { name: string; logoUrl: string | null }>()
+      const nationsMap = new Map<number, { name: string; logoUrl: string | null }>()
+      for (const r of allLinks as any[]) {
+        if (r.team) clubsMap.set(r.team.id, { name: r.team.name, logoUrl: r.team.logoUrl })
+        if (r.nationalTeam) nationsMap.set(r.nationalTeam.id, { name: r.nationalTeam.name, logoUrl: r.nationalTeam.flagUrl })
+      }
+      return ok(res, { clubs: [...clubsMap.values()], nations: [...nationsMap.values()] })
+    }
+
     // match lineup
     if (resource === 'match-lineup') {
       const matchId = Number(req.query.matchId)
@@ -212,6 +232,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         awayTeam: m.awayTeamId ? teamById[m.awayTeamId] : null,
         homeScore: m.homeScore,
         awayScore: m.awayScore,
+        homePenalties: m.homePenalties,
+        awayPenalties: m.awayPenalties,
         eventCount: eventCountByMatch[m.id] ?? 0,
       }))
 

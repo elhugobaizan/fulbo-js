@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
-import { usePlayerStats } from '../hooks/useLocalPlayers'
+import { usePlayerStats, usePlayerMemberships } from '../hooks/useLocalPlayers'
+import { TeamBadge } from './TeamBadge'
 
 interface LocalPlayer {
   id: number
@@ -12,6 +13,7 @@ interface LocalPlayer {
 interface LocalPlayerModalProps {
   player: LocalPlayer
   tournamentId: number
+  isNational?: boolean
   onClose: () => void
 }
 
@@ -25,8 +27,13 @@ function StatBox({ label, value, sub }: { label: string; value: string | number;
   )
 }
 
-export function LocalPlayerModal({ player, tournamentId, onClose }: LocalPlayerModalProps) {
+export function LocalPlayerModal({ player, tournamentId, isNational = false, onClose }: LocalPlayerModalProps) {
   const { data: stats, isLoading } = usePlayerStats(player.id, tournamentId)
+  const { data: memberships } = usePlayerMemberships(player.id)
+
+  // En vista de seleccion mostramos en que club juega; en vista de club, su seleccion. Solo si existe.
+  const crossInfo = isNational ? memberships?.clubs : memberships?.nations
+  const crossLabel = isNational ? 'Juega en:' : ''
 
   return (
     <>
@@ -45,6 +52,17 @@ export function LocalPlayerModal({ player, tournamentId, onClose }: LocalPlayerM
               </div>
               {player.position && (
                 <span className="text-xs text-[#74ACDF] mt-0.5 block">{player.position}</span>
+              )}
+              {crossInfo && crossInfo.length > 0 && (
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <span className="text-xs text-gray-500">{crossLabel}</span>
+                  {crossInfo.map((m) => (
+                    <span key={m.name} className="flex items-center gap-1 text-xs text-gray-300">
+                      <TeamBadge name={m.name} logo={m.logoUrl} size={16} />
+                      {m.name}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
             <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors mt-0.5">
