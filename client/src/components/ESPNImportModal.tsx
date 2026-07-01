@@ -2,23 +2,15 @@ import { useState } from 'react'
 import { X, Download, Check, AlertCircle, Lock, ChevronRight, Link } from 'lucide-react'
 import { useCreateEvent } from '../hooks/useMatchEvents'
 import { useSetLineup } from '../hooks/useMatchLineup'
-import { useCreatePlayer, useEditPlayer } from '../hooks/useLocalPlayers'
+import { useCreatePlayer, useEditPlayer, useSearchPlayers } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
 import { useQueryClient } from '@tanstack/react-query'
 
 const STORAGE_KEY = 'futbol-ar:admin-token'
 
-const LEAGUE_SLUGS = [
-  { label: 'Liga Profesional Argentina', value: 'arg.1' },
-  { label: 'Copa Libertadores', value: 'conmebol.libertadores' },
-  { label: 'Copa Sudamericana', value: 'conmebol.sudamericana' },
-  { label: 'Champions League', value: 'uefa.champions' },
-  { label: 'Premier League', value: 'eng.1' },
-  { label: 'La Liga', value: 'esp.1' },
-  { label: 'Serie A', value: 'ita.1' },
-  { label: 'Bundesliga', value: 'ger.1' },
-  { label: 'Ligue 1', value: 'fra.1' },
-]
+// El summary de ESPN se resuelve por event id (unico global), asi que el slug
+// de liga en el path no cambia la respuesta. Se deja uno fijo como placeholder.
+const DEFAULT_LEAGUE_SLUG = 'arg.1'
 
 const EVENT_LABELS: Record<string, string> = { goal: '⚽', yellow: '🟨', red: '🟥', sub: '🔄', assist: '🅰️', save: '🧤' }
 
@@ -168,7 +160,6 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [url, setUrl] = useState('')
-  const [league, setLeague] = useState('arg.1')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [espnTeams, setEspnTeams] = useState<{ id: string; name: string }[]>([])
@@ -183,9 +174,12 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
   const [espnMatchIdExtracted, setEspnMatchIdExtracted] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // Reconciliation: espnName → { action: 'new' | 'existing' | 'edit', playerId?: number }
-  const [reconciliation, setReconciliation] = useState<Record<string, { action: 'new' | 'existing' | 'edit'; playerId?: number }>>({})
+  // Reconciliation: espnName → { action, playerId? (local_players.id, ya vinculado), personId? (players.id, vinculo cruzado pendiente de crear) }
+  const [reconciliation, setReconciliation] = useState<Record<string, { action: 'new' | 'existing' | 'edit' | 'link'; playerId?: number; personId?: number; displayName?: string }>>({})
   const [espnPlayerList, setEspnPlayerList] = useState<{ name: string; teamId: number }[]>([])
+  const [crossSearchFor, setCrossSearchFor] = useState<string | null>(null)
+  const [crossSearchQuery, setCrossSearchQuery] = useState('')
+  const { data: crossSearchResults = [] } = useSearchPlayers(token, crossSearchFor ? crossSearchQuery : '')
 
   const { mutateAsync: createEvent } = useCreateEvent(matchId)
   const { mutateAsync: setLineup } = useSetLineup(matchId)
@@ -209,7 +203,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
       const m = url.match(/juegoId\/(\d+)/) ?? url.match(/gameId\/(\d+)/) ?? url.match(/event=(\d+)/) ?? url.match(/\/(\d+)$/)
       if (!m) throw new Error('No se pudo extraer el ID del partido de la URL')
       setEspnMatchIdExtracted(m[1])
-      const data = await fetchESPNSummary(m[1], league)
+      const data = await fetchESPNSummary(m[1], DEFAULT_LEAGUE_SLUG)
       const teams = extractESPNTeams(data)
       setEspnTeams(teams)
       setRawData(data)
@@ -249,7 +243,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
         }
       }
 
-      // Step 2: Create new players and await each one
+      // Step 2: Create new players (or link existing persons found elsewhere) and await each one
       for (const { name, teamId } of espnPlayerList) {
         const rec = reconciliation[name]
         if (!rec || rec.action === 'existing') continue
@@ -258,14 +252,23 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
         const lastName = parts.slice(1).join(' ') || parts[0]
         const lineupEntry = [...parsedLineups.home, ...parsedLineups.away].find(p => p.name === name)
         const teamField = isNational ? { nationalTeamId: teamId } : { teamId }
-        const newPlayer = rec.action === 'new' ? await createPlayer({
-          token,
-          payload: { firstName, lastName, ...teamField, tournamentId, position: lineupEntry?.position ?? '' }
-        }) : await editPlayer({
-          token,
-          playerId: rec.playerId!,
-          payload: { firstName, lastName, ...teamField, tournamentId, position: lineupEntry?.position ?? '' }
-        })
+        let newPlayer
+        if (rec.action === 'edit') {
+          newPlayer = await editPlayer({
+            token, playerId: rec.playerId!,
+            payload: { firstName, lastName, ...teamField, tournamentId, position: lineupEntry?.position ?? '' }
+          })
+        } else if (rec.action === 'link') {
+          newPlayer = await createPlayer({
+            token,
+            payload: { existingPlayerId: rec.personId, ...teamField, tournamentId, position: lineupEntry?.position ?? '' }
+          })
+        } else {
+          newPlayer = await createPlayer({
+            token,
+            payload: { firstName, lastName, ...teamField, tournamentId, position: lineupEntry?.position ?? '' }
+          })
+        }
         if (newPlayer?.id) playerIdMap[name] = newPlayer.id
       }
 
@@ -346,13 +349,6 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                     placeholder="https://www.espn.com.ar/futbol/alineacion/_/juegoId/762971"
                     className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" />
                 </div>
-                <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Liga</label>
-                  <select value={league} onChange={e => setLeague(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]">
-                    {LEAGUE_SLUGS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-                  </select>
-                </div>
                 {error && <p className="text-red-400 text-xs flex items-center gap-1"><AlertCircle size={12} />{error}</p>}
                 <button onClick={handleFetch} disabled={!url || loading}
                   className="w-full py-2 rounded-lg bg-[#74ACDF] text-gray-950 font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2">
@@ -399,6 +395,8 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                     const teamPlayers = teamId === homeTeam?.id ? homePlayers : awayPlayers
                     const teamName = teamId === homeTeam?.id ? homeTeam?.shortName : awayTeam?.shortName
                     const pendingId = rec.action === 'existing' ? rec.playerId : (findMatch(name, teamPlayers)?.id ?? teamPlayers[0]?.id)
+                    const isLinked = rec.action === 'existing' || rec.action === 'edit' || rec.action === 'link'
+                    const isSearching = crossSearchFor === name
                     return (
                       <div key={name} className="rounded-lg border border-gray-800 p-3 space-y-2">
                         <div className="flex items-center justify-between">
@@ -406,7 +404,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                             <span className="text-sm text-white">{name}</span>
                             <span className="text-xs text-gray-500 ml-2">{teamName}</span>
                           </div>
-                          {(rec.action === 'existing' || rec.action === 'edit') ? (
+                          {isLinked ? (
                             <button onClick={() => setReconciliation(prev => ({ ...prev, [name]: { action: 'new' } }))}
                               className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-emerald-700 text-white hover:bg-red-800 hover:text-white transition-colors">
                               <Check size={10} /> Vinculado {rec.action === 'edit' ? '(editar)' : ''}
@@ -418,18 +416,55 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                             </button>
                           )}
                         </div>
-                        {(() => {
-                          return (
-                            <select
-                              value={rec.action === 'existing' ? (rec.playerId ?? '') : (findMatch(name, teamPlayers)?.id ?? '')}
-                              onChange={e => setReconciliation(prev => ({ ...prev, [name]: { action: 'existing', playerId: Number(e.target.value) } }))}
-                              disabled={rec.action === 'existing'}
-                              className={`w-full px-2 py-1 rounded border text-xs focus:outline-none ${rec.action === 'existing' ? 'bg-gray-900 border-emerald-700/50 text-gray-300 cursor-default' : 'bg-gray-800 border-gray-700 text-white focus:border-[#74ACDF]'}`}>
-                              <option value="">Sin vincular</option>
-                              {teamPlayers.map((p: any) => <option key={p.id} value={p.id}>{p.lastName}, {p.firstName}</option>)}
-                            </select>
-                          )
-                        })()}
+
+                        {rec.action === 'link' ? (
+                          <p className="text-xs text-emerald-400">
+                            Vinculado a {rec.displayName} — se suma a {teamName} al importar
+                          </p>
+                        ) : (
+                          <select
+                            value={rec.action === 'existing' ? (rec.playerId ?? '') : (findMatch(name, teamPlayers)?.id ?? '')}
+                            onChange={e => setReconciliation(prev => ({ ...prev, [name]: { action: 'existing', playerId: Number(e.target.value) } }))}
+                            disabled={isLinked}
+                            className={`w-full px-2 py-1 rounded border text-xs focus:outline-none ${isLinked ? 'bg-gray-900 border-emerald-700/50 text-gray-300 cursor-default' : 'bg-gray-800 border-gray-700 text-white focus:border-[#74ACDF]'}`}>
+                            <option value="">Sin vincular</option>
+                            {teamPlayers.map((p: any) => <option key={p.id} value={p.id}>{p.lastName}, {p.firstName}</option>)}
+                          </select>
+                        )}
+
+                        {!isLinked && (
+                          <div className="space-y-1.5">
+                            <button onClick={() => { setCrossSearchFor(isSearching ? null : name); setCrossSearchQuery(name) }}
+                              className="text-[11px] text-gray-500 hover:text-[#74ACDF] transition-colors">
+                              {isSearching ? 'Cerrar búsqueda' : '¿Ya juega en otro equipo o selección? Buscar'}
+                            </button>
+                            {isSearching && (
+                              <div className="space-y-1.5 rounded-lg border border-gray-800 bg-gray-950/60 p-2">
+                                <input value={crossSearchQuery} onChange={e => setCrossSearchQuery(e.target.value)}
+                                  placeholder="Nombre..." autoFocus
+                                  className="w-full px-2 py-1 rounded bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]" />
+                                {crossSearchQuery.trim().length < 2 ? (
+                                  <p className="text-[10px] text-gray-600">Escribí al menos 2 letras</p>
+                                ) : crossSearchResults.length === 0 ? (
+                                  <p className="text-[10px] text-gray-600">Sin resultados</p>
+                                ) : crossSearchResults.map((p) => (
+                                  <button key={p.id} type="button" onClick={() => {
+                                    setReconciliation(prev => ({ ...prev, [name]: { action: 'link', personId: p.id, displayName: `${p.firstName} ${p.lastName}` } }))
+                                    setCrossSearchFor(null)
+                                  }} className="w-full text-left px-2 py-1 rounded bg-gray-900 hover:bg-gray-800 transition-colors">
+                                    <p className="text-xs font-medium text-white">{p.firstName} {p.lastName}</p>
+                                    {p.memberships.length > 0 && (
+                                      <p className="text-[10px] text-gray-500 truncate">
+                                        {p.memberships.map((m) => `${m.teamName ?? '?'} (${m.tournamentName})`).join(' · ')}
+                                      </p>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {rec.action === 'new' && (
                           <p className="text-xs text-gray-600">Se creará el jugador y se guardará el evento en la BD</p>
                         )}
@@ -474,7 +509,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
                           <span>{EVENT_LABELS[e.type] ?? e.type}</span>
                           <span className="flex-1 truncate">
                             {e.playerName ?? e.playerInName ?? '–'}
-                            {reconciliation[e.playerName ?? e.playerInName ?? '']?.action === 'existing' && (
+                            {['existing', 'edit', 'link'].includes(reconciliation[e.playerName ?? e.playerInName ?? '']?.action ?? '') && (
                               <span className="text-emerald-500 ml-1 text-xs">✓</span>
                             )}
                           </span>
