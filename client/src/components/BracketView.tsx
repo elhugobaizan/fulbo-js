@@ -61,6 +61,9 @@ function MatchCard({ slot, onEdit, isFinal = false, knockoutStarted = true }: { 
             ? <img src={slot.homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
             : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
           <span className={`text-xs flex-1 truncate ${homeWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.homeLabel}</span>
+          {isFinished && match?.homePenalties !== null && (
+            <span className="text-[9px] font-medium text-yellow-500/80">({match?.homePenalties})</span>
+          )}
           <span className={`text-xs font-bold ${homeWon ? 'text-white' : 'text-gray-500'}`}>{isFinished ? match?.homeScore ?? 0 : ''}</span>
         </div>
         <div className="h-px bg-gray-800" />
@@ -69,6 +72,9 @@ function MatchCard({ slot, onEdit, isFinal = false, knockoutStarted = true }: { 
             ? <img src={slot.awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
             : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
           <span className={`text-xs flex-1 truncate ${awayWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.awayLabel}</span>
+          {isFinished && match?.awayPenalties !== null && (
+            <span className="text-[9px] font-medium text-yellow-500/80">({match?.awayPenalties})</span>
+          )}
           <span className={`text-xs font-bold ${awayWon ? 'text-white' : 'text-gray-500'}`}>{isFinished ? match?.awayScore ?? 0 : ''}</span>
         </div>
       </div>

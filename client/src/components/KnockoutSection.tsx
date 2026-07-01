@@ -444,9 +444,14 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
                     </button>
                   )}
                 </div>
-                <span className={`text-sm font-bold w-16 text-center ${match.status === 'finished' ? 'text-white' : 'text-gray-600'}`}>
-                  {match.status === 'finished' ? `${match.homeScore} - ${match.awayScore}` : 'vs'}
-                </span>
+                <div className="w-16 flex flex-col items-center flex-shrink-0">
+                  <span className={`text-sm font-bold ${match.status === 'finished' ? 'text-white' : 'text-gray-600'}`}>
+                    {match.status === 'finished' ? `${match.homeScore} - ${match.awayScore}` : 'vs'}
+                  </span>
+                  {match.status === 'finished' && match.homePenalties !== null && (
+                    <span className="text-[10px] text-yellow-500/80">({match.homePenalties}-{match.awayPenalties})</span>
+                  )}
+                </div>
                 <div className="flex-1 flex items-center gap-1 min-w-0">
                   <span className="text-sm text-white truncate font-medium">
                     {match.awayTeam?.shortName ?? match.awayTeam?.name ?? '?'}
