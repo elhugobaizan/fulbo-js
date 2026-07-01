@@ -341,45 +341,58 @@ function FixturesPage() {
       {loadingLocal && <FixturesSkeleton />}
       {!loadingLocal && localData && (
         <>
-          {(matchdays.length > 0 || hasKnockout) && !isKnockout && effectiveMatchday && (
+          {(matchdays.length > 0 || hasKnockout) && (
             <div className="rounded-2xl border border-white/[0.05] bg-white/[0.025] p-4">
-              {/* Arrow selector */}
-              <div className="mb-4 flex items-center justify-between">
-                <div>
+              {/* Arrow selector — solo tiene sentido para fechas de grupos */}
+              {!isKnockout && effectiveMatchday && (
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Fecha seleccionada
+                    </p>
+                    <h2 className="mt-1 text-xl font-bold tracking-tight text-white">
+                      Fecha {selectedMatchday}
+                      <span className="ml-2 text-sm font-medium text-slate-500">
+                        de {matchdays.length}
+                      </span>
+                    </h2>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => previousMatchday !== undefined && handleMatchdayChange(previousMatchday)}
+                      disabled={currentIndex <= 0}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-slate-400 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      <ChevronLeft />
+                    </button>
+
+                    <button
+                      onClick={() => nextMatchday !== undefined && handleMatchdayChange(nextMatchday)}
+                      disabled={currentIndex === -1 || currentIndex >= matchdays.length - 1}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-slate-400 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      <ChevronRight />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isKnockout && (
+                <div className="mb-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                     Fecha seleccionada
                   </p>
                   <h2 className="mt-1 text-xl font-bold tracking-tight text-white">
-                    Fecha {selectedMatchday}
-                    <span className="ml-2 text-sm font-medium text-slate-500">
-                      de {matchdays.length}
-                    </span>
+                    Eliminatoria
                   </h2>
                 </div>
+              )}
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => previousMatchday !== undefined && handleMatchdayChange(previousMatchday)}
-                    disabled={currentIndex <= 0}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-slate-400 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <ChevronLeft />
-                  </button>
-
-                  <button
-                    onClick={() => nextMatchday !== undefined && handleMatchdayChange(nextMatchday)}
-                    disabled={currentIndex === -1 || currentIndex >= matchdays.length - 1}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-slate-400 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <ChevronRight />
-                  </button>
-                </div>
-              </div>
-
-              {/* Pills */}
+              {/* Pills — se quedan visibles siempre para poder volver a una fecha */}
               <div className="flex flex-wrap gap-2">
                 {matchdays.map((matchday) => {
-                  const active = selectedMatchday === matchday
+                  const active = !isKnockout && selectedMatchday === matchday
 
                   return (
                     <button
@@ -400,7 +413,9 @@ function FixturesPage() {
                   <button onClick={() => handleMatchdayChange(KNOCKOUT_KEY)}
                     className={[
                       'h-10 min-w-10 rounded-xl px-3 text-sm font-semibold transition-all duration-150',
-                      'border border-white/[0.04] bg-white/[0.025] text-slate-500 hover:border-white/[0.08] hover:bg-white/[0.05] hover:text-slate-300',
+                      isKnockout
+                        ? 'border border-white/[0.08] bg-white/[0.09] text-white shadow-[0_0_24px_rgba(255,255,255,0.04)]'
+                        : 'border border-white/[0.04] bg-white/[0.025] text-slate-500 hover:border-white/[0.08] hover:bg-white/[0.05] hover:text-slate-300',
                     ].join(' ')}
                   >
                     Eliminatoria
