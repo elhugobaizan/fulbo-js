@@ -9,6 +9,8 @@ drizzle/
 
 # Vite
 client/dist/
+client/dev-dist/
+*.tsbuildinfo
 
 # OS
 .DS_Store
