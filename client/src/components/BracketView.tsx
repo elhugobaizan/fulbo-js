@@ -5,7 +5,7 @@ import { apiClient } from '../lib/api'
 import { useNavigate } from '@tanstack/react-router'
 import type { BracketSlot } from '../hooks/useBracket'
 import { ROUND_LABELS, ROUND_ORDER, ADMIN_TOKEN_KEY } from '../config/rounds'
-import { formatMatchDateShort } from '../lib/date'
+import { formatMatchDateParts } from '../lib/date'
 
 const CARD_W = 160
 const CARD_H = 70
@@ -26,7 +26,7 @@ function MatchCard({ slot, onEdit, isFinal = false, knockoutStarted = true }: { 
   )
   const awayWon = isFinished && match && !homeWon
 
-  const dateStr = !isFinished && match?.scheduledAt ? formatMatchDateShort(match.scheduledAt) : null
+  const dateParts = !isFinished && match?.scheduledAt ? formatMatchDateParts(match.scheduledAt) : null
 
   const handleClick = () => {
     if (isFinished && match?.id) {
@@ -40,7 +40,7 @@ function MatchCard({ slot, onEdit, isFinal = false, knockoutStarted = true }: { 
     <button
       onClick={handleClick}
       style={{ width: CARD_W }}
-      className={`rounded-xl border overflow-hidden transition-all text-left flex-shrink-0 ${isFinal
+      className={`rounded-xl border overflow-hidden transition-all text-left flex-shrink-0 flex items-stretch ${isFinal
         ? 'border-yellow-600/60 bg-yellow-950/20 hover:border-yellow-500'
         : isFinished
           ? 'border-gray-700 bg-gray-900/60 hover:bg-gray-900/80'
@@ -49,26 +49,29 @@ function MatchCard({ slot, onEdit, isFinal = false, knockoutStarted = true }: { 
             : 'border-dashed border-gray-800 bg-gray-900/10 cursor-default opacity-60 hover:border-gray-600 hover:bg-gray-800/30 hover:opacity-80'
         }`}
     >
-      <div className={`flex items-center gap-1.5 px-2.5 py-2 ${homeWon ? 'bg-gray-700/60' : ''}`}>
-        {knockoutStarted && slot.homeTeam?.logoUrl
-          ? <img src={slot.homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
-          : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
-        <span className={`text-xs flex-1 truncate ${homeWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.homeLabel}</span>
-        <span className={`text-xs font-bold ${homeWon ? 'text-white' : 'text-gray-500'}`}>{isFinished ? match?.homeScore ?? 0 : ''}</span>
-      </div>
-      <div className="h-px bg-gray-800" />
-      <div className={`flex items-center gap-1.5 px-2.5 py-2 ${awayWon ? 'bg-gray-700/60' : ''}`}>
-        {knockoutStarted && slot.awayTeam?.logoUrl
-          ? <img src={slot.awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
-          : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
-        <span className={`text-xs flex-1 truncate ${awayWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.awayLabel}</span>
-        <span className={`text-xs font-bold ${awayWon ? 'text-white' : 'text-gray-500'}`}>{isFinished ? match?.awayScore ?? 0 : ''}</span>
-      </div>
-      {dateStr && (
-        <div className="px-2.5 py-1 border-t border-gray-800/60">
-          <span className="text-[10px] text-gray-500 capitalize">{dateStr}</span>
+      {dateParts && (
+        <div className="flex flex-col items-center justify-center px-1.5 border-r border-gray-800/60 flex-shrink-0">
+          <span className="text-xs font-bold text-gray-300 leading-none">{dateParts.day}</span>
+          <span className="text-[9px] text-gray-500 uppercase leading-none mt-0.5">{dateParts.month}</span>
         </div>
       )}
+      <div className="flex-1 min-w-0">
+        <div className={`flex items-center gap-1.5 px-2.5 py-2 ${homeWon ? 'bg-gray-700/60' : ''}`}>
+          {knockoutStarted && slot.homeTeam?.logoUrl
+            ? <img src={slot.homeTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+            : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
+          <span className={`text-xs flex-1 truncate ${homeWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.homeLabel}</span>
+          <span className={`text-xs font-bold ${homeWon ? 'text-white' : 'text-gray-500'}`}>{isFinished ? match?.homeScore ?? 0 : ''}</span>
+        </div>
+        <div className="h-px bg-gray-800" />
+        <div className={`flex items-center gap-1.5 px-2.5 py-2 ${awayWon ? 'bg-gray-700/60' : ''}`}>
+          {knockoutStarted && slot.awayTeam?.logoUrl
+            ? <img src={slot.awayTeam.logoUrl} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+            : <div className="w-4 h-4 rounded-full bg-gray-700 flex-shrink-0" />}
+          <span className={`text-xs flex-1 truncate ${awayWon ? 'text-white font-bold' : isFinal ? 'text-gray-200' : 'text-gray-300'}`}>{slot.awayLabel}</span>
+          <span className={`text-xs font-bold ${awayWon ? 'text-white' : 'text-gray-500'}`}>{isFinished ? match?.awayScore ?? 0 : ''}</span>
+        </div>
+      </div>
     </button>
   )
 }

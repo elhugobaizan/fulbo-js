@@ -14,6 +14,13 @@ export function formatMatchDateShort(dateStr: string): string {
   return parseDateLocal(dateStr).toLocaleDateString('es-AR', SHORT_OPTS)
 }
 
+export function formatMatchDateParts(dateStr: string): { day: string; month: string } {
+  const d = parseDateLocal(dateStr)
+  const day = d.toLocaleDateString('es-AR', { day: 'numeric' })
+  const month = d.toLocaleDateString('es-AR', { month: 'short' }).replace('.', '')
+  return { day, month }
+}
+
 export function formatTimeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const minutes = Math.floor(diff / 60000)
