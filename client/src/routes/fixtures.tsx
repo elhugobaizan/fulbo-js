@@ -1,7 +1,7 @@
 import { useActiveTournament } from '../hooks/useActiveTournament'
 import { useState, useEffect, useMemo } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { ChevronLeft, ChevronRight, Check, Lock } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import { useLocalFixtures } from '../hooks/useLocalFixtures'
 import { TeamBadge } from '../components/TeamBadge'
 import { Modal } from '../components/Modal'
@@ -9,7 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MatchEventsPanel } from '../components/MatchEventsPanel'
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
-import { ROUND_LABELS, ROUND_ORDER, ADMIN_TOKEN_KEY } from '../config/rounds'
+import { ROUND_LABELS, ROUND_ORDER } from '../config/rounds'
 import { formatMatchDate } from '../lib/date'
 
 export const Route = createFileRoute('/fixtures')({
@@ -43,10 +43,6 @@ function groupMatchesByDate(matches: any[]) {
 // ─── Result Modal ─────────────────────────────────────────────────────────────
 
 function ResultModal({ match, isNational = false, onClose }: { match: any; isNational?: boolean; onClose: () => void }) {
-  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? ''
-  const [authenticated, setAuthenticated] = useState(!!token)
-  const [password, setPassword] = useState('')
-  const [authError, setAuthError] = useState('')
   const [homeScore, setHomeScore] = useState(String(match.homeScore ?? ''))
   const [awayScore, setAwayScore] = useState(String(match.awayScore ?? ''))
   const [homePen, setHomePen] = useState(String(match.homePenalties ?? ''))
@@ -58,27 +54,15 @@ function ResultModal({ match, isNational = false, onClose }: { match: any; isNat
   const { data: awayPlayers = [] } = usePlayersByTeam(match.awayTeam?.id ?? 0, teamType)
   const showPenalties = homeScore !== '' && awayScore !== '' && Number(homeScore) === Number(awayScore)
 
-  const authMutation = useMutation<any, Error, void>({
-    mutationFn: async () => {
-      const { data } = await apiClient.post('/admin?action=auth', { password })
-      return data.data
-    },
-    onSuccess: (data) => {
-      if (data?.token) { sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token); setAuthenticated(true) }
-      else setAuthError('Password incorrecto')
-    },
-    onError: () => setAuthError('Password incorrecto'),
-  })
-
+  // Cargar el resultado es publico (sin password). Las incidencias siguen protegidas
+  // por el propio login interno de MatchEventsPanel.
   const saveMutation = useMutation<any, Error, void>({
     mutationFn: async () => {
-      const t = sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? ''
-      const { data } = await apiClient.patch('/admin?action=matches', {
+      const { data } = await apiClient.patch('/admin?action=set-result', {
         matchId: match.id, homeScore: Number(homeScore), awayScore: Number(awayScore),
         homePenalties: showPenalties && homePen !== '' ? Number(homePen) : null,
         awayPenalties: showPenalties && awayPen !== '' ? Number(awayPen) : null,
-        status: 'finished',
-      }, { headers: { 'x-admin-token': t } })
+      })
       return data.data
     },
     onSuccess: () => {
@@ -97,50 +81,38 @@ function ResultModal({ match, isNational = false, onClose }: { match: any; isNat
           <p className="text-gray-500 text-xs">vs</p>
           <p className="text-white font-medium">{match.awayTeam?.name ?? '?'}</p>
         </div>
-        {!authenticated ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-xs text-gray-400"><Lock size={12} /><span>Password de admin</span></div>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && authMutation.mutate()} placeholder="Password"
-              className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white text-sm focus:outline-none focus:border-[#74ACDF]" autoFocus />
-            {authError && <p className="text-red-400 text-xs">{authError}</p>}
-            <button onClick={() => authMutation.mutate()} disabled={!password || authMutation.isPending}
-              className="w-full py-2 rounded-lg bg-[#74ACDF] text-gray-950 font-semibold text-sm disabled:opacity-50">Verificar</button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-white flex-1 text-right truncate">{match.homeTeam?.shortName ?? match.homeTeam?.name}</span>
-              <div className="flex items-center gap-2">
-                <input type="number" min="0" value={homeScore} onChange={e => setHomeScore(e.target.value)}
-                  className="w-14 text-center py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white font-bold text-lg focus:outline-none focus:border-[#74ACDF]" autoFocus />
-                <span className="text-gray-500 font-bold">-</span>
-                <input type="number" min="0" value={awayScore} onChange={e => setAwayScore(e.target.value)}
-                  className="w-14 text-center py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white font-bold text-lg focus:outline-none focus:border-[#74ACDF]" />
-              </div>
-              <span className="text-sm text-white flex-1 truncate">{match.awayTeam?.shortName ?? match.awayTeam?.name}</span>
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-white flex-1 text-right truncate">{match.homeTeam?.shortName ?? match.homeTeam?.name}</span>
+            <div className="flex items-center gap-2">
+              <input type="number" min="0" value={homeScore} onChange={e => setHomeScore(e.target.value)}
+                className="w-14 text-center py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white font-bold text-lg focus:outline-none focus:border-[#74ACDF]" autoFocus />
+              <span className="text-gray-500 font-bold">-</span>
+              <input type="number" min="0" value={awayScore} onChange={e => setAwayScore(e.target.value)}
+                className="w-14 text-center py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-white font-bold text-lg focus:outline-none focus:border-[#74ACDF]" />
             </div>
-            {showPenalties && (
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 flex-1 text-right">Penales</span>
-                <div className="flex items-center gap-2">
-                  <input type="number" min="0" value={homePen} onChange={e => setHomePen(e.target.value)}
-                    className="w-14 text-center py-1 rounded-lg bg-gray-800 border border-yellow-600/50 text-yellow-400 font-bold focus:outline-none" />
-                  <span className="text-gray-500">-</span>
-                  <input type="number" min="0" value={awayPen} onChange={e => setAwayPen(e.target.value)}
-                    className="w-14 text-center py-1 rounded-lg bg-gray-800 border border-yellow-600/50 text-yellow-400 font-bold focus:outline-none" />
-                </div>
-                <span className="flex-1" />
-              </div>
-            )}
-            {saveMutation.isError && <p className="text-red-400 text-xs text-center">Error al guardar</p>}
-            <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || homeScore === '' || awayScore === ''}
-              className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
-              <Check size={14} />{saveMutation.isPending ? 'Guardando...' : 'Guardar resultado'}
-            </button>
+            <span className="text-sm text-white flex-1 truncate">{match.awayTeam?.shortName ?? match.awayTeam?.name}</span>
           </div>
-        )}
-        {match.status === 'finished' && authenticated && (
+          {showPenalties && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400 flex-1 text-right">Penales</span>
+              <div className="flex items-center gap-2">
+                <input type="number" min="0" value={homePen} onChange={e => setHomePen(e.target.value)}
+                  className="w-14 text-center py-1 rounded-lg bg-gray-800 border border-yellow-600/50 text-yellow-400 font-bold focus:outline-none" />
+                <span className="text-gray-500">-</span>
+                <input type="number" min="0" value={awayPen} onChange={e => setAwayPen(e.target.value)}
+                  className="w-14 text-center py-1 rounded-lg bg-gray-800 border border-yellow-600/50 text-yellow-400 font-bold focus:outline-none" />
+              </div>
+              <span className="flex-1" />
+            </div>
+          )}
+          {saveMutation.isError && <p className="text-red-400 text-xs text-center">Error al guardar</p>}
+          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || homeScore === '' || awayScore === ''}
+            className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
+            <Check size={14} />{saveMutation.isPending ? 'Guardando...' : 'Guardar resultado'}
+          </button>
+        </div>
+        {match.status === 'finished' && (
           <MatchEventsPanel matchId={match.id} homeTeam={match.homeTeam} awayTeam={match.awayTeam} homePlayers={homePlayers} awayPlayers={awayPlayers} />
         )}
       </div>

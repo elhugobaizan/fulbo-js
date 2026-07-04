@@ -4,7 +4,7 @@ import { Check } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { useNavigate } from '@tanstack/react-router'
 import type { BracketSlot } from '../hooks/useBracket'
-import { ROUND_LABELS, ROUND_ORDER, ADMIN_TOKEN_KEY } from '../config/rounds'
+import { ROUND_LABELS, ROUND_ORDER } from '../config/rounds'
 import { formatMatchDateParts } from '../lib/date'
 
 const CARD_W = 160
@@ -83,9 +83,9 @@ function MatchCard({ slot, onEdit, isFinal = false, knockoutStarted = true }: { 
 }
 
 // ─── Result Modal ─────────────────────────────────────────────────────────────
+// Cargar el resultado es publico (sin password) — pega al endpoint set-result.
 
 function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void }) {
-  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? ''
   const [homeScore, setHomeScore] = useState(String(slot.match?.homeScore ?? ''))
   const [awayScore, setAwayScore] = useState(String(slot.match?.awayScore ?? ''))
   const [homePen, setHomePen] = useState(String(slot.match?.homePenalties ?? ''))
@@ -96,12 +96,11 @@ function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void
   const saveMutation = useMutation<void, Error, void>({
     mutationFn: async () => {
       if (slot.match?.id) {
-        await apiClient.patch('/admin?action=matches', {
+        await apiClient.patch('/admin?action=set-result', {
           matchId: slot.match.id, homeScore: Number(homeScore), awayScore: Number(awayScore),
           homePenalties: showPenalties && homePen !== '' ? Number(homePen) : null,
           awayPenalties: showPenalties && awayPen !== '' ? Number(awayPen) : null,
-          status: 'finished',
-        }, { headers: { 'x-admin-token': token } })
+        })
       }
     },
     onSuccess: () => {
@@ -142,6 +141,7 @@ function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void
               <span className="flex-1" />
             </div>
           )}
+          {saveMutation.isError && <p className="text-red-400 text-xs text-center">Error al guardar</p>}
           <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || homeScore === '' || awayScore === ''}
             className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
             <Check size={14} />{saveMutation.isPending ? 'Guardando...' : 'Guardar resultado'}
@@ -414,7 +414,7 @@ export function BracketView({ bracket, knockoutStarted = true }: { bracket: any;
         <DynamicBracket bracket={bracket} onEdit={setEditingSlot} knockoutStarted={knockoutStarted} />
       </div>
       <div className="md:hidden">
-        <MobileBracket bracket={bracket} onEdit={setEditingSlot} />
+        <MobileBracket bracket={bracket} onEdit={setEditingSlot} knockoutStarted={knockoutStarted} />
       </div>
       {editingSlot && <ResultModal slot={editingSlot} onClose={() => setEditingSlot(null)} />}
     </>

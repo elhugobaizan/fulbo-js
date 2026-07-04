@@ -26,6 +26,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return ok(res, { authenticated: true, token: createSessionToken() })
   }
 
+  // ── Public: cargar el resultado de un partido ──────────────────────────────
+  // Intencionalmente SIN auth: cualquiera puede cargar el marcador. Solo actualiza
+  // un partido que ya existe y unicamente los campos del resultado (nunca crea ni
+  // borra, ni toca equipos/fecha/fase). El resto del panel sigue protegido.
+  if (action === 'set-result' && req.method === 'PATCH') {
+    const { matchId, homeScore, awayScore, homePenalties, awayPenalties } = req.body
+    if (!matchId) return err(res, 'matchId required', 400)
+    const [existing] = await db.select().from(matches).where(eq(matches.id, Number(matchId)))
+    if (!existing) return err(res, 'Match not found', 404)
+    const [updated] = await db.update(matches).set({
+      homeScore: homeScore != null ? Number(homeScore) : null,
+      awayScore: awayScore != null ? Number(awayScore) : null,
+      homePenalties: homePenalties != null ? Number(homePenalties) : null,
+      awayPenalties: awayPenalties != null ? Number(awayPenalties) : null,
+      status: 'finished',
+      updatedAt: new Date(),
+    } as any).where(eq(matches.id, Number(matchId))).returning()
+    return ok(res, updated)
+  }
+
   // ── Protected routes ──────────────────────────────────────────────────────
   if (!checkAuth(req)) return err(res, 'Unauthorized', 401)
 
