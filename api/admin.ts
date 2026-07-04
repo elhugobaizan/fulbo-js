@@ -433,23 +433,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!tournamentId || !round) return err(res, 'tournamentId and round required', 400)
       const tid = Number(tournamentId)
 
-      // Check if matches already exist
-      const existing = await db.select().from(matches).where(
+      // Existing knockout matches del torneo: sirve para (a) bloquear solo si ESTA ronda
+      // ya se genero, y (b) resolver los ganadores de rondas anteriores mas abajo.
+      const existingKnockout = await db.select().from(matches).where(
         and(eq(matches.tournamentId, tid), eq(matches.phase, 'knockout'))
       )
-      if (existing.length > 0) return err(res, 'Knockout matches already generated', 400)
+      if (existingKnockout.some((m: any) => m.knockoutRound === round)) {
+        return err(res, 'Los partidos de esta ronda ya fueron generados', 400)
+      }
+      const matchByRoundPos: Record<string, any> = {}
+      for (const m of existingKnockout as any[]) matchByRoundPos[`${m.knockoutRound}:${m.bracketPosition}`] = m
 
-      // Get bracket rules for this round via raw SQL (includes wildcard_group_ids)
-      const rulesRaw = await db.execute(sql`
-        SELECT * FROM bracket_rules WHERE tournament_id = ${tid} AND knockout_round = ${round}
-      `)
-      const rules = ((rulesRaw as any).rows ?? []).map((r: any) => ({
+      // Todas las reglas del torneo: las de esta ronda (a generar) + el resto para
+      // poder resolver homeWinnerOf/awayWinnerOf (que apuntan a reglas de rondas previas).
+      const allRulesRaw = await db.execute(sql`SELECT * FROM bracket_rules WHERE tournament_id = ${tid}`)
+      const allRules = ((allRulesRaw as any).rows ?? []).map((r: any) => ({
         id: r.id, tournamentId: r.tournament_id, knockoutRound: r.knockout_round,
         bracketPosition: r.bracket_position, homeGroupId: r.home_group_id,
         homePosition: r.home_position, awayGroupId: r.away_group_id,
         awayPosition: r.away_position, homeWinnerOf: r.home_winner_of,
         awayWinnerOf: r.away_winner_of, wildcardGroupIds: r.wildcard_group_ids,
       }))
+      const ruleById: Record<number, any> = Object.fromEntries(allRules.map((r: any) => [r.id, r]))
+      const rules = allRules.filter((r: any) => r.knockoutRound === round)
+
+      // Resuelve el id del equipo ganador de la regla previa (por su match finalizado)
+      const winnerIdOf = (winnerOfRuleId: number | null): number | null => {
+        if (!winnerOfRuleId) return null
+        const prevRule = ruleById[winnerOfRuleId]
+        if (!prevRule) return null
+        const prevMatch = matchByRoundPos[`${prevRule.knockoutRound}:${prevRule.bracketPosition}`]
+        if (!prevMatch || prevMatch.status !== 'finished') return null
+        const homeWon = prevMatch.homePenalties != null
+          ? prevMatch.homePenalties > (prevMatch.awayPenalties ?? 0)
+          : (prevMatch.homeScore ?? 0) > (prevMatch.awayScore ?? 0)
+        return homeWon ? prevMatch.homeTeamId : prevMatch.awayTeamId
+      }
 
       // Get tournament and groups
       const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tid))
@@ -547,14 +566,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const rule of rules.sort((a: any, b: any) => a.bracketPosition - b.bracketPosition)) {
         const homeTeam = resolveTeam(rule.homeGroupId, rule.homePosition, (rule as any).wildcardGroupIds)
         const awayTeam = resolveTeam(rule.awayGroupId, rule.awayPosition, (rule as any).wildcardGroupIds)
+        // Fase de grupos (homeTeam) o ganador de la ronda anterior (winnerOf)
+        const homeTeamId = homeTeam?.id ?? winnerIdOf(rule.homeWinnerOf)
+        const awayTeamId = awayTeam?.id ?? winnerIdOf(rule.awayWinnerOf)
 
         const [match] = await db.insert(matches).values({
           tournamentId: tid,
           phase: 'knockout',
           knockoutRound: round,
           bracketPosition: rule.bracketPosition,
-          homeTeamId: homeTeam?.id ?? null,
-          awayTeamId: awayTeam?.id ?? null,
+          homeTeamId: homeTeamId ?? null,
+          awayTeamId: awayTeamId ?? null,
           status: 'scheduled',
           scheduledAt: null,
         } as any).returning()
