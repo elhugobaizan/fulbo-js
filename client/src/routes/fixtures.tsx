@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import { useLocalFixtures } from '../hooks/useLocalFixtures'
 import { TeamBadge } from '../components/TeamBadge'
 import { Modal } from '../components/Modal'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { MatchEventsPanel } from '../components/MatchEventsPanel'
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
@@ -47,7 +47,6 @@ function ResultModal({ match, isNational = false, onClose }: { match: any; isNat
   const [awayScore, setAwayScore] = useState(String(match.awayScore ?? ''))
   const [homePen, setHomePen] = useState(String(match.homePenalties ?? ''))
   const [awayPen, setAwayPen] = useState(String(match.awayPenalties ?? ''))
-  const queryClient = useQueryClient()
 
   const teamType = isNational ? 'national' : undefined
   const { data: homePlayers = [] } = usePlayersByTeam(match.homeTeam?.id ?? 0, teamType)
@@ -56,22 +55,19 @@ function ResultModal({ match, isNational = false, onClose }: { match: any; isNat
 
   // Cargar el resultado es publico (sin password). Las incidencias siguen protegidas
   // por el propio login interno de MatchEventsPanel.
-  const saveMutation = useMutation<any, Error, void>({
-    mutationFn: async () => {
-      const { data } = await apiClient.patch('/admin?action=set-result', {
-        matchId: match.id, homeScore: Number(homeScore), awayScore: Number(awayScore),
-        homePenalties: showPenalties && homePen !== '' ? Number(homePen) : null,
-        awayPenalties: showPenalties && awayPen !== '' ? Number(awayPen) : null,
-      })
-      return data.data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['local-fixtures'] });
-      queryClient.invalidateQueries({ queryKey: ['knockout-fixtures'] });
-      queryClient.invalidateQueries({ queryKey: ['bracket', String(match.id)] });
-      onClose()
-    },
-  })
+  // Mutacion keyed: el mutationFn + invalidaciones viven en el default de main.tsx, asi
+  // se persiste y se resume sola si se guardo sin conexion.
+  const saveMutation = useMutation<any, Error, any>({ mutationKey: ['set-result'] })
+
+  const handleSave = () => {
+    saveMutation.mutate({
+      matchId: match.id, homeScore: Number(homeScore), awayScore: Number(awayScore),
+      homePenalties: showPenalties && homePen !== '' ? Number(homePen) : null,
+      awayPenalties: showPenalties && awayPen !== '' ? Number(awayPen) : null,
+    })
+    // cierra al toque: si esta offline la mutacion queda pausada/persistida y sincroniza sola
+    onClose()
+  }
 
   return (
     <Modal title="Cargar resultado" onClose={onClose} maxHeight="85vh">
@@ -106,10 +102,9 @@ function ResultModal({ match, isNational = false, onClose }: { match: any; isNat
               <span className="flex-1" />
             </div>
           )}
-          {saveMutation.isError && <p className="text-red-400 text-xs text-center">Error al guardar</p>}
-          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || homeScore === '' || awayScore === ''}
+          <button onClick={handleSave} disabled={homeScore === '' || awayScore === ''}
             className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
-            <Check size={14} />{saveMutation.isPending ? 'Guardando...' : 'Guardar resultado'}
+            <Check size={14} />Guardar resultado
           </button>
         </div>
         {match.status === 'finished' && (

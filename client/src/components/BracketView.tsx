@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
-import { apiClient } from '../lib/api'
 import { useNavigate } from '@tanstack/react-router'
 import type { BracketSlot } from '../hooks/useBracket'
 import { ROUND_LABELS, ROUND_ORDER } from '../config/rounds'
@@ -90,26 +89,22 @@ function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void
   const [awayScore, setAwayScore] = useState(String(slot.match?.awayScore ?? ''))
   const [homePen, setHomePen] = useState(String(slot.match?.homePenalties ?? ''))
   const [awayPen, setAwayPen] = useState(String(slot.match?.awayPenalties ?? ''))
-  const queryClient = useQueryClient()
   const showPenalties = homeScore !== '' && awayScore !== '' && Number(homeScore) === Number(awayScore)
 
-  const saveMutation = useMutation<void, Error, void>({
-    mutationFn: async () => {
-      if (slot.match?.id) {
-        await apiClient.patch('/admin?action=set-result', {
-          matchId: slot.match.id, homeScore: Number(homeScore), awayScore: Number(awayScore),
-          homePenalties: showPenalties && homePen !== '' ? Number(homePen) : null,
-          awayPenalties: showPenalties && awayPen !== '' ? Number(awayPen) : null,
-        })
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bracket'] })
-      queryClient.invalidateQueries({ queryKey: ['knockout-fixtures'] })
-      queryClient.invalidateQueries({ queryKey: ['knockout-matches'] })
-      onClose()
-    },
-  })
+  // mutacion keyed: el mutationFn + invalidaciones viven en el default de main.tsx, asi
+  // se persiste y se resume sola si se guardo sin conexion
+  const saveMutation = useMutation<any, Error, any>({ mutationKey: ['set-result'] })
+
+  const handleSave = () => {
+    if (!slot.match?.id) return
+    saveMutation.mutate({
+      matchId: slot.match.id, homeScore: Number(homeScore), awayScore: Number(awayScore),
+      homePenalties: showPenalties && homePen !== '' ? Number(homePen) : null,
+      awayPenalties: showPenalties && awayPen !== '' ? Number(awayPen) : null,
+    })
+    // cierra al toque: si esta offline la mutacion queda pausada/persistida y sincroniza sola
+    onClose()
+  }
 
   return (
     <>
@@ -141,10 +136,9 @@ function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void
               <span className="flex-1" />
             </div>
           )}
-          {saveMutation.isError && <p className="text-red-400 text-xs text-center">Error al guardar</p>}
-          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || homeScore === '' || awayScore === ''}
+          <button onClick={handleSave} disabled={homeScore === '' || awayScore === ''}
             className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 flex items-center justify-center gap-2">
-            <Check size={14} />{saveMutation.isPending ? 'Guardando...' : 'Guardar resultado'}
+            <Check size={14} />Guardar resultado
           </button>
         </div>
       </div>

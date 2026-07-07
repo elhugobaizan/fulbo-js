@@ -2,6 +2,7 @@ import { createRootRouteWithContext, Outlet } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
 import { Navbar } from '../components/Navbar'
 import { BottomNav } from '../components/BottomNav'
+import { SyncStatus } from '../components/SyncStatus'
 
 interface RouterContext {
   queryClient: QueryClient
@@ -24,6 +25,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       <div className="md:hidden">
         <BottomNav />
       </div>
+
+      <SyncStatus />
 
       <div className="flex justify-between items-center px-4 py-4 md:pb-4 pb-24">
         <span className="text-xs text-gray-600">
