@@ -317,7 +317,7 @@ export function ESPNImportModal({ matchId, homeTeam, awayTeam, homePlayers, away
   return (
     <>
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pointer-events-none">
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pb-24 sm:pb-4 pointer-events-none">
         <div className="bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-md pointer-events-auto"
           style={{ maxHeight: '85vh' }} onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-800">

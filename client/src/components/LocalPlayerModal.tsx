@@ -38,7 +38,7 @@ export function LocalPlayerModal({ player, tournamentId, isNational = false, onC
   return (
     <>
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pointer-events-none">
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pb-24 sm:pb-4 pointer-events-none">
         <div className="bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-sm pointer-events-auto"
           onClick={e => e.stopPropagation()}>
 
