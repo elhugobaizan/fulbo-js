@@ -9,7 +9,7 @@ import { LineupPanel } from '../components/LineupPanel'
 import { ESPNImportModal } from '../components/ESPNImportModal'
 import { Modal } from '../components/Modal'
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
-import { formatMatchDate } from '../lib/date'
+import { formatMatchDate, formatMatchTime } from '../lib/date'
 
 export const Route = createFileRoute('/match/$matchId')({
   component: MatchPage,
@@ -90,6 +90,7 @@ function MatchPage() {
         {match.scheduledAt && (
           <p className="text-xs text-gray-500 text-center mb-4 capitalize">
             {formatMatchDate(match.scheduledAt)}
+            {formatMatchTime(match.scheduledAt) && <span className="ml-2 text-gray-400">{formatMatchTime(match.scheduledAt)}</span>}
             {match.matchday && <span className="ml-2 text-gray-600">· Fecha {match.matchday}</span>}
           </p>
         )}

@@ -10,7 +10,7 @@ import { MatchEventsPanel } from '../components/MatchEventsPanel'
 import { usePlayersByTeam } from '../hooks/useLocalPlayers'
 import { apiClient } from '../lib/api'
 import { ROUND_LABELS, ROUND_ORDER } from '../config/rounds'
-import { formatMatchDate } from '../lib/date'
+import { formatMatchDate, formatMatchTime } from '../lib/date'
 
 export const Route = createFileRoute('/fixtures')({
   component: FixturesPage,
@@ -125,6 +125,7 @@ function LocalFixtureCard({ match, isNational = false }: { match: any; isNationa
   const homeWon = isFinished && (match.homeScore ?? 0) > (match.awayScore ?? 0)
   const awayWon = isFinished && (match.awayScore ?? 0) > (match.homeScore ?? 0)
   const canEdit = isFinished || isPast
+  const time = formatMatchTime(match.scheduledAt)
 
   const handleClick = () => {
     if (isFinished) {
@@ -164,7 +165,7 @@ function LocalFixtureCard({ match, isNational = false }: { match: any; isNationa
             />
           </div>
 
-          <div className="flex min-w-[86px] items-center justify-center">
+          <div className="flex min-w-[86px] flex-col items-center justify-center gap-1">
             {isFinished ? (
               <div className="flex items-baseline justify-center gap-1.5 rounded-xl border border-white/[0.05] bg-black/20 px-3 py-1.5">
                 <span
@@ -198,6 +199,7 @@ function LocalFixtureCard({ match, isNational = false }: { match: any; isNationa
                 vs
               </div>
             )}
+            {time && <span className="text-[11px] font-medium text-slate-500">{time}</span>}
           </div>
 
           <div className="flex min-w-0 items-center gap-2">
@@ -243,7 +245,9 @@ const KNOCKOUT_KEY = 'knockout'
 
 function FixturesPage() {
   const [selectedMatchday, setSelectedMatchday] = useState<number | string | undefined>(() => {
-    const saved = sessionStorage.getItem(FIXTURES_MATCHDAY_KEY)
+    // localStorage (no sessionStorage) para que la fecha/Eliminatoria elegida persista
+    // al cerrar y reabrir la app
+    const saved = localStorage.getItem(FIXTURES_MATCHDAY_KEY)
     return saved === KNOCKOUT_KEY ? KNOCKOUT_KEY : saved ? Number(saved) : undefined
   })
 
@@ -271,7 +275,7 @@ function FixturesPage() {
 
   const handleMatchdayChange = (m: number | string) => {
     setSelectedMatchday(m)
-    sessionStorage.setItem(FIXTURES_MATCHDAY_KEY, String(m))
+    localStorage.setItem(FIXTURES_MATCHDAY_KEY, String(m))
   }
 
   const matchdays = localData?.matchdays ?? []
