@@ -412,11 +412,13 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
         </div>
       )}
 
-      {ROUND_ORDER.filter(r => byRound[r]).reverse().map(round => (
+      {ROUND_ORDER.filter(r => byRound[r]).reverse().map(round => {
+        const roundComplete = (byRound[round] as any[]).every((m: any) => m.status === 'finished')
+        return (
         <div key={round} className="space-y-2">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{ROUND_LABELS[round] ?? round}</h3>
-            {byRound[round]?.every((m: any) => m.status === 'finished') && (
+            {roundComplete && (
               <span className="text-[10px] text-emerald-500">✓ Completa</span>
             )}
           </div>
@@ -473,7 +475,13 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
                 <WildcardTeamPicker token={token} tournamentId={tournamentId} match={match} side="away"
                   onDone={() => setEditingTeamSlot(null)} />
               )}
-              {editingDate === match.id ? (
+              {roundComplete ? (
+                <div className="flex items-center">
+                  <span className="text-xs text-gray-500">
+                    {match.scheduledAt ? formatMatchDateShort(match.scheduledAt) : 'Sin fecha'}
+                  </span>
+                </div>
+              ) : editingDate === match.id ? (
                 <div className="flex gap-2">
                   <input type="datetime-local" value={dateValue} onChange={e => setDateValue(e.target.value)}
                     className="flex-1 px-2 py-1 rounded-lg bg-gray-800 border border-gray-700 text-white text-xs focus:outline-none focus:border-[#74ACDF]" />
@@ -502,7 +510,8 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
             )
           })}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
