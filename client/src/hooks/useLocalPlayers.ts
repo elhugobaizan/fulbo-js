@@ -12,7 +12,7 @@ export interface LocalPlayer {
   assists: number
   yellowCards: number
   redCards: number
-  team?: { id: number; name: string; shortName: string | null; logoUrl: string | null }
+  team?: { id: number; name: string; shortName: string | null; logoUrl: string | null; country?: string | null }
 }
 
 async function fetchLocalTopScorers(tournamentId: number): Promise<LocalPlayer[]> {

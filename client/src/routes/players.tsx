@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { UserPlus } from 'lucide-react'
-import { useLocalTopScorers, useLocalTopAssists, useLocalTopCards, useTournamentTeams } from '../hooks/useLocalPlayers'
+import { useLocalTopScorers, useLocalTopCards, useTournamentTeams } from '../hooks/useLocalPlayers'
 import { useActiveTournament } from '../hooks/useActiveTournament'
 import { TeamBadge } from '../components/TeamBadge'
 import { AddPlayerModal } from '../components/AddPlayerModal'
@@ -11,10 +11,15 @@ export const Route = createFileRoute('/players')({
   component: PlayersPage,
 })
 
-type Tab = 'scorers' | 'assists' | 'cards'
+type Tab = 'scorers' | 'cards'
 
-function LocalPlayerRow({ player, stat }: { player: LocalPlayer; stat: 'goals' | 'assists' | 'cards' }) {
-  const value = stat === 'goals' ? player.goals : stat === 'assists' ? player.assists : player.yellowCards
+// País del jugador: country del club, o el nombre de la selección (que ES el país)
+function playerCountry(p: LocalPlayer): string | null {
+  return p.team?.country ?? p.team?.name ?? null
+}
+
+function LocalPlayerRow({ player, stat }: { player: LocalPlayer; stat: 'goals' | 'cards' }) {
+  const value = stat === 'goals' ? player.goals : player.yellowCards
   const name = `${player.firstName} ${player.lastName}`
   return (
     <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-800 bg-gray-900/40">
@@ -34,7 +39,7 @@ function LocalPlayerRow({ player, stat }: { player: LocalPlayer; stat: 'goals' |
 }
 
 function EmptyLocal({ tab }: { tab: Tab }) {
-  const labels = { scorers: 'goleadores', assists: 'asistidores', cards: 'amonestados' }
+  const labels = { scorers: 'goleadores', cards: 'amonestados' }
   return (
     <div className="rounded-xl border border-gray-800 p-10 text-center">
       <p className="text-gray-400 text-sm">No hay {labels[tab]} registrados todavía</p>
@@ -45,20 +50,34 @@ function EmptyLocal({ tab }: { tab: Tab }) {
 function PlayersPage() {
   const [tab, setTab] = useState<Tab>('scorers')
   const [showAddPlayer, setShowAddPlayer] = useState(false)
+  const [countryFilter, setCountryFilter] = useState('')
 
   const { data: activeTournament } = useActiveTournament()
   const tournamentId = activeTournament?.id ?? 1
 
   const { data: localScorers = [] } = useLocalTopScorers(tournamentId)
-  const { data: localAssists = [] } = useLocalTopAssists(tournamentId)
   const { data: localCards = [] } = useLocalTopCards(tournamentId)
   const { data: teamsList = [] } = useTournamentTeams(tournamentId)
 
   const tabs = [
     { key: 'scorers' as Tab, label: 'Goleadores' },
-    { key: 'assists' as Tab, label: 'Asistidores' },
     { key: 'cards' as Tab, label: 'Amonestados' },
   ]
+
+  // Países presentes entre los goleadores (para el filtro)
+  const countries = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of localScorers as LocalPlayer[]) {
+      const c = playerCountry(p)
+      if (c) set.add(c)
+    }
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [localScorers])
+
+  const filteredScorers = useMemo(() => {
+    if (!countryFilter) return localScorers as LocalPlayer[]
+    return (localScorers as LocalPlayer[]).filter(p => playerCountry(p) === countryFilter)
+  }, [localScorers, countryFilter])
 
   return (
     <div className="space-y-4">
@@ -84,14 +103,18 @@ function PlayersPage() {
         ))}
       </div>
 
+      {tab === 'scorers' && countries.length > 1 && (
+        <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)}
+          className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-800 text-white text-sm focus:outline-none focus:border-[#74ACDF]">
+          <option value="">Todos los países</option>
+          {countries.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      )}
+
       <div className="space-y-2">
         {tab === 'scorers' && (
-          localScorers.length === 0 ? <EmptyLocal tab="scorers" /> :
-            localScorers.map((p: LocalPlayer) => <LocalPlayerRow key={p.id} player={p} stat="goals" />)
-        )}
-        {tab === 'assists' && (
-          localAssists.length === 0 ? <EmptyLocal tab="assists" /> :
-            localAssists.map((p: LocalPlayer) => <LocalPlayerRow key={p.id} player={p} stat="assists" />)
+          filteredScorers.length === 0 ? <EmptyLocal tab="scorers" /> :
+            filteredScorers.map((p: LocalPlayer) => <LocalPlayerRow key={p.id} player={p} stat="goals" />)
         )}
         {tab === 'cards' && (
           localCards.length === 0 ? <EmptyLocal tab="cards" /> :
