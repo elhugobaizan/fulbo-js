@@ -367,6 +367,13 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
         .sort((a, b) => Number(b[0]) - Number(a[0]))[0]?.[1]
       return highestRound
     }
+    // Caso especial: la final ya existe pero falta el 3er puesto (torneo generado
+    // antes de esta feature). Con las semis completas, ofrecer generarlo solo.
+    const semis = byRound['semifinal'] ?? []
+    if (existingRounds.has('final') && !existingRounds.has('third_place') &&
+      semis.length === 2 && semis.every((m: any) => m.status === 'finished')) {
+      return 'third_place'
+    }
     const lastRound = ROUND_ORDER.filter(r => existingRounds.has(r)).pop()
     if (!lastRound) return null
     const lastRoundMatches = byRound[lastRound] ?? []

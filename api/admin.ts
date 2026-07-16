@@ -585,7 +585,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Al generar la final, crear tambien el partido por el 3er puesto con los
       // perdedores de las semis. No usa bracket rules: es siempre el mismo cruce.
-      if (round === 'final') {
+      // round === 'third_place' permite generarlo solo, para torneos donde la
+      // final ya existia antes de esta feature.
+      if (round === 'final' || round === 'third_place') {
         const semis = (existingKnockout as any[])
           .filter((m: any) => m.knockoutRound === 'semifinal')
           .sort((a: any, b: any) => (a.bracketPosition ?? 0) - (b.bracketPosition ?? 0))
