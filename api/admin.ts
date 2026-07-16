@@ -583,6 +583,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         created.push(match)
       }
 
+      // Al generar la final, crear tambien el partido por el 3er puesto con los
+      // perdedores de las semis. No usa bracket rules: es siempre el mismo cruce.
+      if (round === 'final') {
+        const semis = (existingKnockout as any[])
+          .filter((m: any) => m.knockoutRound === 'semifinal')
+          .sort((a: any, b: any) => (a.bracketPosition ?? 0) - (b.bracketPosition ?? 0))
+        const hasThirdPlace = (existingKnockout as any[]).some((m: any) => m.knockoutRound === 'third_place')
+        if (!hasThirdPlace && semis.length === 2 && semis.every((m: any) => m.status === 'finished')) {
+          const loserIdOf = (m: any): number | null => {
+            const homeWon = m.homePenalties != null
+              ? m.homePenalties > (m.awayPenalties ?? 0)
+              : (m.homeScore ?? 0) > (m.awayScore ?? 0)
+            return homeWon ? m.awayTeamId : m.homeTeamId
+          }
+          const [thirdPlace] = await db.insert(matches).values({
+            tournamentId: tid,
+            phase: 'knockout',
+            knockoutRound: 'third_place',
+            bracketPosition: 1,
+            homeTeamId: loserIdOf(semis[0]),
+            awayTeamId: loserIdOf(semis[1]),
+            status: 'scheduled',
+            scheduledAt: null,
+          } as any).returning()
+          created.push(thirdPlace)
+        }
+      }
+
       return ok(res, { created: created.length })
     }
 

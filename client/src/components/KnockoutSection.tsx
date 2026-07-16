@@ -382,7 +382,7 @@ export function KnockoutSection({ token, tournamentId, tournament, groups = [] }
         {knockoutStarted && nextRoundToGenerate && (
           <button onClick={() => generateMutation.mutate(nextRoundToGenerate)} disabled={generateMutation.isPending}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#74ACDF] text-gray-950 font-medium text-sm disabled:opacity-50 transition-colors">
-            <Trophy size={13} /> {generateMutation.isPending ? 'Generando...' : `Generar ${ROUND_LABELS[nextRoundToGenerate] ?? nextRoundToGenerate}`}
+            <Trophy size={13} /> {generateMutation.isPending ? 'Generando...' : `Generar ${nextRoundToGenerate === 'final' ? 'Final y 3er puesto' : (ROUND_LABELS[nextRoundToGenerate] ?? nextRoundToGenerate)}`}
           </button>
         )}
         {!knockoutStarted && (

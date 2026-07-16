@@ -359,6 +359,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
+    // Tercer puesto: no tiene bracket rule (se genera junto con la final, con los
+    // perdedores de las semis), asi que el slot se arma directo desde el match.
+    const thirdPlaceMatch = enrichedMatches.find((m: any) => m.phase === 'knockout' && m.knockoutRound === 'third_place')
+    if (thirdPlaceMatch) {
+      bracket['third_place'] = [{
+        ruleId: -1,
+        bracketPosition: 1,
+        knockoutRound: 'third_place',
+        homeTeam: thirdPlaceMatch.homeTeam,
+        awayTeam: thirdPlaceMatch.awayTeam,
+        homeLabel: thirdPlaceMatch.homeTeam?.shortName ?? thirdPlaceMatch.homeTeam?.name ?? '?',
+        awayLabel: thirdPlaceMatch.awayTeam?.shortName ?? thirdPlaceMatch.awayTeam?.name ?? '?',
+        match: thirdPlaceMatch,
+        homeWinnerOf: null,
+        awayWinnerOf: null,
+        homeWinnerOfPosition: null,
+        homeWinnerOfRound: null,
+        awayWinnerOfPosition: null,
+        awayWinnerOfRound: null,
+      }]
+    }
+
     return ok(res, bracket)
   } catch (error) {
     console.error(error)

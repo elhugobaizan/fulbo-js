@@ -149,7 +149,10 @@ function ResultModal({ slot, onClose }: { slot: BracketSlot; onClose: () => void
 // ─── Dynamic Bracket (CSS absolute positioning) ───────────────────────────────
 
 function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket: any; onEdit: (slot: BracketSlot) => void; knockoutStarted?: boolean }) {
-  const rounds = ROUND_ORDER.filter(r => (bracket[r] ?? []).length > 0)
+  // El 3er puesto queda fuera del arbol (no tiene feeders por winnerOf); se
+  // renderiza como card suelta debajo de la final.
+  const rounds = ROUND_ORDER.filter(r => r !== 'third_place' && (bracket[r] ?? []).length > 0)
+  const thirdPlaceSlot: BracketSlot | null = (bracket['third_place'] ?? [])[0] ?? null
   if (rounds.length === 0) return null
 
   const firstRound = rounds[0]
@@ -374,6 +377,14 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
             </div>
           )
         })}
+
+        {/* Tercer puesto: card suelta debajo de la final */}
+        {thirdPlaceSlot && (
+          <div style={{ position: 'absolute', left: finalX, top: finalY + CARD_H + 40 }}>
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1 text-center">3er puesto</p>
+            <MatchCard slot={thirdPlaceSlot} onEdit={() => onEdit(thirdPlaceSlot)} knockoutStarted={knockoutStarted} />
+          </div>
+        )}
       </div>
     </div>
   )
