@@ -377,7 +377,8 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
                   </div>
                 </div>
               )}
-              <div style={{ position: 'absolute', left: finalX, top: finalY }}>
+              <div style={{ position: 'absolute', left: finalX, top: finalY - 20 }}>
+                <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1 text-center">Final</p>
                 <MatchCard slot={slot} onEdit={() => onEdit(slot)} isFinal knockoutStarted={knockoutStarted} />
               </div>
             </div>
