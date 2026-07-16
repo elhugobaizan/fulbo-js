@@ -292,6 +292,12 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
   const sfYs = sfSlots.map(s => yMap[`${sfRound}:${s.bracketPosition}`]).filter(y => y !== undefined)
   const finalY = sfYs.length > 0 ? sfYs.reduce((a, b) => a + b, 0) / sfYs.length - CARD_H - 36 : totalH / 2 - CARD_H / 2
 
+  // 3er puesto: la columna central se superpone horizontalmente con las de las
+  // semis, asi que va DEBAJO de la banda vertical de las semis (no bajo la final,
+  // que caeria justo encima de ellas). El campeon baja para no chocar con el.
+  const thirdPlaceY = sfYs.length > 0 ? Math.max(...sfYs) + CARD_H + 24 : finalY + CARD_H + 40
+  const championY = thirdPlaceSlot ? thirdPlaceY + CARD_H + 56 : finalY + 250
+
   return (
     <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
       <div style={{ position: 'relative', width: totalW, height: totalH + CARD_H, minHeight: 400, margin: '0 auto' }}>
@@ -356,7 +362,7 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
           return (
             <div key={`F-${slot.ruleId}`}>
               {champion && (
-                <div style={{ position: 'absolute', left: finalX - 40, top: finalY + 250, width: CARD_W + 80 }}
+                <div style={{ position: 'absolute', left: finalX - 40, top: championY, width: CARD_W + 80 }}
                   className="text-center">
                   <div className="text-3xl mb-1">🏆</div>
                   <div className="text-yellow-400 text-[10px] font-bold uppercase tracking-widest mb-2">Campeón</div>
@@ -378,9 +384,9 @@ function DynamicBracket({ bracket, onEdit, knockoutStarted = false }: { bracket:
           )
         })}
 
-        {/* Tercer puesto: card suelta debajo de la final */}
+        {/* Tercer puesto: card suelta debajo de la banda de las semis */}
         {thirdPlaceSlot && (
-          <div style={{ position: 'absolute', left: finalX, top: finalY + CARD_H + 40 }}>
+          <div style={{ position: 'absolute', left: finalX, top: thirdPlaceY }}>
             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1 text-center">3er puesto</p>
             <MatchCard slot={thirdPlaceSlot} onEdit={() => onEdit(thirdPlaceSlot)} knockoutStarted={knockoutStarted} />
           </div>
